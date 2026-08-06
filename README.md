@@ -2,40 +2,38 @@
 
 ![Ticker to dashboard and back](images/demo.gif)
 
-**Token HUD** is a neon, Grafana-flavoured desktop widget for Claude Code
-economics. It answers three questions at a glance: how many tokens `rtk` and
-`headroom` saved you, what that is worth in dollars, and how much of your Claude
-usage window is left before the next reset.
+**Neon, Grafana-flavoured desktop widget for Claude Code economics.** Three
+questions at a glance: how many tokens `rtk` and `headroom` saved you, what that
+is worth in dollars, and how much of your usage window is left before the reset.
 
-Frameless, always on top, draggable, no taskbar entry. Two modes share one code
-base: a full **dashboard** (560x380) and a collapsed **ticker** bar (720x44) that
-lives quietly along an edge of the screen. Double-click switches between them,
-as in the animation above.
+Frameless, always on top, draggable, no taskbar entry. Two modes, one code base:
+a full **dashboard** (560x380) and a collapsed **ticker** bar (720x44) that lives
+quietly along an edge of the screen. Double-click switches between them, as in
+the animation above.
 
 ![Dashboard](images/dashboard.png)
 
 ## 🚀 Run
 
-The project is managed with [uv](https://docs.astral.sh/uv/) and driven through a
-Makefile.
+Managed with [uv](https://docs.astral.sh/uv/), driven through a Makefile.
 
 ```sh
-make dev    # create .venv and install runtime + dev dependencies
+make dev    # create .venv, install runtime + dev dependencies
 make run    # launch the HUD
-make check  # ruff + pytest
+make check  # ruff + pytest, no display needed
 ```
 
-`make help` lists every target (`install`, `dev`, `run`, `test`, `lint`,
-`format`, `check`, `build`, `clean`, `distclean`). Without make: `uv sync` then
+`make help` lists every target. Without make: `uv sync` then
 `uv run python -m token_hud`, or install the `token-hud` script.
 
-Right-click the widget, or use the tray icon, for: show/hide, mode switch, quit.
-Window position and mode are remembered (`QSettings`, `token-hud/hud`).
+Right-click the widget, or use the tray icon, for show/hide, mode switch, quit.
+Position and mode are remembered across restarts, and so is the saved-token
+series behind the trend panel.
 
 ## 🔌 Data sources
 
-Everything is read locally except the commit calendar, which is the only network
-hop and runs just once every 10 minutes.
+Everything is read locally except the commit calendar, the only network hop, and
+it runs once every 10 minutes.
 
 | Metric | Source |
 | --- | --- |
@@ -44,45 +42,34 @@ hop and runs just once every 10 minutes.
 | 5 h / 7 d usage windows, extra credits | `~/.headroom/subscription_state.json` (15 s) |
 | Rolling 30-day commit calendar | `gh api graphql` -> `contributionsCollection`, fallback `git log` (600 s) |
 
-Two upstream quirks the code works around:
-
-- `five_hour.limit` is reported as `0`, so absolute "tokens remaining" is not
-  derivable. The HUD shows **percentage used + time to reset** instead.
-- `seconds_to_reset` ages with the file, so `resets_at` is preferred and the
-  countdown is recomputed every second in the UI.
-
 Every read runs in a `QThreadPool` worker; the UI thread only receives a
-`Snapshot` via `MetricsStore.snapshotReady`. A missing or malformed source
-degrades to empty metrics and a red liveness dot - it never raises.
+`Snapshot`. A missing or malformed source degrades to empty metrics and a red
+liveness dot - it never raises.
+
+Two upstream quirks worked around: `five_hour.limit` is reported as `0`, so
+absolute "tokens remaining" is not derivable and the HUD shows **percentage used
++ time to reset** instead; and `seconds_to_reset` ages with the file, so
+`resets_at` wins and the countdown is recomputed every second.
 
 ## 🟩 Commit heatmap
 
 A GitHub-style rolling month: one column per calendar week, one row per weekday,
 dark green to neon green. Levels are **quantile** cut-offs like GitHub's own
 graph - a fixed scale would flatten a spiky month - and only the top level gets a
-halo, otherwise the whole grid glows and the hierarchy disappears.
-
-- **Dashboard**: sits in the free space under the donut legend, so the window
-  stays at 560 x 380.
-- **Ticker**: 44 px cannot hold seven rows, so it degrades to one bar per day
-  with height *and* colour carrying the count, suffixed after the five original
-  readouts.
+halo, otherwise the whole grid glows and the hierarchy disappears. In the ticker,
+44 px cannot hold seven rows, so it degrades to one bar per day with height *and*
+colour carrying the count.
 
 `gh api graphql` reproduces the profile page exactly, private repos included. If
 `gh` is missing or unauthenticated, `git log` over local clones takes over - it
-under-reports by construction (only cloned repos, committer email match), so the
-panel labels itself `local` in that mode. Both failing leaves the grid empty with
-`github indisponible`.
-
-That fallback walks the filesystem, so where it walks is configurable. It
-defaults to `~/workspaces`, `~/src` and `~/projects`, three levels deep:
+under-reports by construction, so the panel labels itself `local`. That fallback
+walks the filesystem, so where it walks is configurable:
 
 ```sh
 TOKEN_HUD_GIT_ROOTS="$HOME/code:/srv/repos" TOKEN_HUD_GIT_DEPTH=2 make run
 ```
 
-`TOKEN_HUD_GIT_ROOTS` takes a path-separated list (`~` expanded);
-`TOKEN_HUD_GIT_DEPTH` caps the descent. Both are read at scan time, and the scan
+It defaults to `~/workspaces`, `~/src` and `~/projects`, three levels deep, and
 only ever runs `git log`.
 
 ![Ticker](images/ticker.png)
@@ -95,12 +82,6 @@ The window border is cyan below 70 % usage, solid orange from 70 %, and pulses
 red from 90 % (`theme.WARN_PCT` / `theme.CRIT_PCT`). Quota gauges follow the same
 scale.
 
-## 📈 History
-
-The trend panel needs points across restarts, so the saved-token series is
-persisted to `history.json` under the Qt app-data location (240 points, one every
-15 s, older than 6 h dropped on load).
-
 ## 🗂️ Layout
 
 ```
@@ -112,20 +93,8 @@ token_hud/
   collectors.py  rtk + headroom + quota readers
   model.py       frozen dataclasses passed to the UI
   theme.py       palette, fonts, glow/arc painting helpers
-tests/           parsing and threshold tests, no display needed
-images/          screenshots used by the README and the review artifact
-pyproject.toml   uv/hatchling project definition, ruff and pytest config
-Makefile         install, run, test, lint, build, clean
+tests/           parsing, thresholds, formatters, graceful degradation
 ```
-
-## ✅ Tests
-
-```sh
-make test
-```
-
-Covers parsing, threshold colours, formatters and graceful degradation - no
-display required.
 
 ## ⚠️ Known limits
 
