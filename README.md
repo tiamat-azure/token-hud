@@ -8,6 +8,10 @@ Frameless, always on top, draggable, no taskbar entry. Two modes share one code
 base: a full **dashboard** (560x380) and a collapsed **ticker** bar (720x44).
 Double-click switches between them.
 
+![Ticker to dashboard and back](images/demo.gif)
+
+Double-click switches between the collapsed ticker and the full dashboard.
+
 ![Dashboard](images/dashboard.png)
 
 ## Run

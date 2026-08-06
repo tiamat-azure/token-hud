@@ -37,3 +37,9 @@ clean: ## Remove build and test artefacts
 
 distclean: clean ## Also remove the virtual environment
 	rm -rf .venv
+
+.PHONY: gif
+gif: ## Rebuild images/demo.gif from the screenshots
+	$(UV) run --with pillow python tools/make_demo_gif.py
+	magick images/demo.gif -layers OptimizeFrame images/demo.opt.gif
+	mv images/demo.opt.gif images/demo.gif
