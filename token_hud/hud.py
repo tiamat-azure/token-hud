@@ -46,6 +46,7 @@ from .store import HISTORY_INTERVAL_S, MetricsStore
 
 DASHBOARD_SIZE = (560, 380)
 TICKER_SIZE = (720, 44)
+DEFAULT_MODE = "ticker"
 
 _PALETTE = {"cyan": theme.CYAN, "violet": theme.VIOLET, "green": theme.GREEN}
 
@@ -272,6 +273,9 @@ class HudWindow(QWidget):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # Showing without activating keeps the focus on the terminal underneath, but the
+        # window manager then never re-raises us above a freshly focused fullscreen client.
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
 
         self.dashboard = DashboardView()
         self.ticker = TickerView()
@@ -298,7 +302,14 @@ class HudWindow(QWidget):
         self._clock.timeout.connect(lambda: self.apply(store.snapshot))
         self._clock.start()
 
-        self.set_mode(self._settings.value("mode", "dashboard", str))
+        # Fullscreen terminals (herdr) get stacked above "keep above" windows by most
+        # window managers, so re-assert the stacking order periodically.
+        self._keep_above = QTimer(self)
+        self._keep_above.setInterval(2000)
+        self._keep_above.timeout.connect(self._raise_above)
+        self._keep_above.start()
+
+        self.set_mode(self._settings.value("mode", DEFAULT_MODE, str))
         self._restore_position()
 
     # --- state --------------------------------------------------------------
@@ -394,13 +405,23 @@ class HudWindow(QWidget):
         menu = build_menu(self, tray_context=False)
         menu.exec(event.globalPos())
 
+    def _raise_above(self) -> None:
+        if self.isVisible():
+            self.raise_()
+
     def _restore_position(self) -> None:
         pos = self._settings.value("pos")
-        if isinstance(pos, QPoint):
+        # A stale off-screen position leaves the HUD invisible and unclickable, which
+        # is what a Wayland session records because it reports bogus global positions.
+        if isinstance(pos, QPoint) and self.screen().availableGeometry().contains(pos):
             self.move(pos)
         else:
-            screen = self.screen().availableGeometry()
-            self.move(screen.right() - self.width() - 24, screen.top() + 24)
+            self.move(self._default_position())
+
+    def _default_position(self) -> QPoint:
+        """Top of the screen, horizontally centred."""
+        screen = self.screen().availableGeometry()
+        return QPoint(screen.center().x() - self.width() // 2, screen.top() + 24)
 
     def closeEvent(self, event) -> None:
         self._store.save_history()
