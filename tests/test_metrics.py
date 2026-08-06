@@ -12,7 +12,13 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from token_hud import collectors, theme  # noqa: E402
-from token_hud.gauges import fmt_duration, fmt_tokens, fmt_usd  # noqa: E402
+from token_hud.gauges import (  # noqa: E402
+    fmt_commit_day,
+    fmt_contributions,
+    fmt_duration,
+    fmt_tokens,
+    fmt_usd,
+)
 from token_hud.model import HeadroomMetrics, QuotaWindow, RtkMetrics, Snapshot  # noqa: E402
 
 
@@ -54,6 +60,14 @@ def test_formatters():
     assert fmt_duration(None) == "-"
     assert fmt_duration(12_075) == "3 h 21"
     assert fmt_duration(599_475) == "6 j 22 h"
+
+
+def test_commit_tooltip_formatters():
+    assert fmt_commit_day("2026-08-07") == "07/08/2026"
+    assert fmt_commit_day("pas-une-date") == "pas-une-date"
+    assert fmt_contributions(0) == "Aucune contribution"
+    assert fmt_contributions(1) == "1 contribution"
+    assert fmt_contributions(12) == "12 contributions"
 
 
 def test_read_headroom_uses_lifetime_and_busiest_model(tmp_path, monkeypatch):

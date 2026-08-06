@@ -14,9 +14,19 @@ the fixed sizes in `hud`.
 from __future__ import annotations
 
 from datetime import date
+from math import ceil
 
-from PyQt6.QtCore import QPointF, QRectF, Qt, QVariantAnimation
-from PyQt6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen
+from PyQt6.QtCore import QPoint, QPointF, QRectF, Qt, QVariantAnimation
+from PyQt6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetricsF,
+    QGuiApplication,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPen,
+)
 from PyQt6.QtWidgets import QWidget
 
 from . import theme
@@ -42,6 +52,141 @@ def fmt_duration(seconds: float | None) -> str:
     if seconds >= 86_400:
         return f"{seconds // 86_400} j {seconds % 86_400 // 3600:02d} h"
     return f"{seconds // 3600} h {seconds % 3600 // 60:02d}"
+
+
+def fmt_commit_day(iso: str) -> str:
+    """ISO date -> DD/MM/YYYY, the format used in the contribution tooltip."""
+    try:
+        return date.fromisoformat(iso).strftime("%d/%m/%Y")
+    except ValueError:
+        return iso
+
+
+def fmt_contributions(count: int) -> str:
+    if count <= 0:
+        return "Aucune contribution"
+    return f"{count} contribution" + ("s" if count > 1 else "")
+
+
+class CommitTooltip(QWidget):
+    """Hover card for a single heatmap day, GitHub-style but painted with the HUD palette.
+
+    A top-level `ToolTip` window rather than a `QToolTip` string: the stock tooltip is
+    themed by the desktop and would clash with the neon panels.
+    """
+
+    PAD_X = 11.0
+    PAD_Y = 8.0
+    GAP = 2.0
+    MARGIN = 8
+
+    def __init__(self) -> None:
+        super().__init__(
+            None,
+            Qt.WindowType.ToolTip
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.NoDropShadowWindowHint,
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._title = ""
+        self._subtitle = ""
+
+    def show_for(self, anchor: QPoint, iso: str, count: int) -> None:
+        """`anchor` is the global position of the hovered cell's top centre."""
+        self._title = fmt_contributions(count)
+        self._subtitle = fmt_commit_day(iso)
+        title_m = QFontMetricsF(theme.mono(8, QFont.Weight.DemiBold))
+        sub_m = QFontMetricsF(theme.mono(7))
+        width = ceil(
+            max(title_m.horizontalAdvance(self._title), sub_m.horizontalAdvance(self._subtitle))
+            + 2 * self.PAD_X
+        )
+        height = ceil(title_m.height() + sub_m.height() + self.GAP + 2 * self.PAD_Y)
+        self.resize(width, height)
+        self.move(self._placed(anchor, width, height))
+        self.show()
+        self.raise_()
+        self.update()
+
+    def _placed(self, anchor: QPoint, width: int, height: int) -> QPoint:
+        """Centre above the cell, flipping below and clamping when the screen runs out."""
+        screen = QGuiApplication.screenAt(anchor) or QGuiApplication.primaryScreen()
+        x = anchor.x() - width // 2
+        y = anchor.y() - height - self.MARGIN
+        if screen is not None:
+            area = screen.availableGeometry()
+            x = min(max(x, area.left() + 4), area.right() - width - 4)
+            if y < area.top() + 4:
+                y = anchor.y() + self.MARGIN * 3
+        return QPoint(x, y)
+
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        painter.setPen(QPen(theme.LINE, 1))
+        painter.setBrush(theme.BG)
+        painter.drawRoundedRect(rect, 7, 7)
+
+        title_font = theme.mono(8, QFont.Weight.DemiBold)
+        sub_font = theme.mono(7)
+        title_h = QFontMetricsF(title_font).height()
+        sub_h = QFontMetricsF(sub_font).height()
+        inner = rect.adjusted(self.PAD_X, self.PAD_Y, -self.PAD_X, -self.PAD_Y)
+        theme.draw_text(
+            painter, QRectF(inner.left(), inner.top(), inner.width(), title_h), self._title,
+            theme.GREEN, title_font, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            glow=True,
+        )
+        theme.draw_text(
+            painter,
+            QRectF(inner.left(), inner.top() + title_h + self.GAP, inner.width(), sub_h),
+            self._subtitle, theme.DIM, sub_font,
+        )
+
+
+class _CommitHover:
+    """Shared hover plumbing: subclasses map a local point to a `(ISO date, count)` cell."""
+
+    def _install_hover(self) -> None:
+        self.setMouseTracking(True)
+        self._tip = CommitTooltip()
+        self._hovered: tuple[str, int] | None = None
+
+    def _cell_at(self, pos: QPointF) -> tuple[tuple[str, int], QPointF] | None:
+        """Return the hovered day and the local anchor point (cell top centre)."""
+        raise NotImplementedError
+
+    def mouseMoveEvent(self, event) -> None:
+        hit = self._cell_at(QPointF(event.position()))
+        if hit is None:
+            self._hide_tip()
+        else:
+            day, anchor = hit
+            if day != self._hovered:
+                self._hovered = day
+                self._tip.show_for(self.mapToGlobal(anchor.toPoint()), day[0], day[1])
+                self.update()
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self._hide_tip()
+        super().leaveEvent(event)
+
+    def hideEvent(self, event) -> None:
+        self._hide_tip()
+        super().hideEvent(event)
+
+    def _hide_tip(self) -> None:
+        if self._hovered is not None:
+            self._hovered = None
+            self.update()
+        self._tip.hide()
+
+    def _is_hovered(self, day: tuple[str, int]) -> bool:
+        return self._hovered is not None and day[0] == self._hovered[0]
 
 
 class _Panel(QWidget):
@@ -331,7 +476,7 @@ class AreaChart(_Panel):
         painter.drawEllipse(coords[-1], 2.6, 2.6)
 
 
-class CommitHeatmap(_Panel):
+class CommitHeatmap(_CommitHover, _Panel):
     """GitHub-style rolling month: one column per calendar week, one row per weekday.
 
     Only the top level glows - lighting every cell would flatten the hierarchy.
@@ -340,20 +485,36 @@ class CommitHeatmap(_Panel):
     CELL = 10
     GAP = 3
     LABEL_W = 11
+    TOP = 18.0  # header band above the grid
     DAY_LABELS = ("L", "", "M", "", "V", "", "D")
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent, framed=False)
         self._commits = CommitMetrics()
         self.setMinimumHeight(7 * self.CELL + 6 * self.GAP + 17)
+        self._install_hover()
 
     def set_commits(self, commits: CommitMetrics) -> None:
         self._commits = commits
-        self.setToolTip(
-            f"{commits.total} contributions sur 30 j · pic {commits.peak}"
-            + (" · source git local" if commits.source == "git" else "")
-        )
+        self._hide_tip()
         self.update()
+
+    def _cell_at(self, pos: QPointF) -> tuple[tuple[str, int], QPointF] | None:
+        step = self.CELL + self.GAP
+        col = int((pos.x() - self.LABEL_W) // step)
+        row = int((pos.y() - self.TOP) // step)
+        if col < 0 or row < 0 or row > 6:
+            return None
+        if (pos.x() - self.LABEL_W) % step > self.CELL or (pos.y() - self.TOP) % step > self.CELL:
+            return None
+        columns = self._columns()
+        if col >= len(columns):
+            return None
+        day = columns[col][row]
+        if day is None:
+            return None
+        anchor = QPointF(self.LABEL_W + col * step + self.CELL / 2, self.TOP + row * step)
+        return day, anchor
 
     def _columns(self) -> list[list[tuple[str, int] | None]]:
         """Pad the first week so weekdays line up with the real calendar."""
@@ -387,7 +548,7 @@ class CommitHeatmap(_Panel):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
         )
 
-        top = 18.0
+        top = self.TOP
         painter.setPen(Qt.PenStyle.NoPen)
         for row, label in enumerate(self.DAY_LABELS):
             if not label:
@@ -413,9 +574,13 @@ class CommitHeatmap(_Panel):
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(color)
                 painter.drawRoundedRect(rect, 2.5, 2.5)
+                if self._is_hovered(day):
+                    painter.setPen(QPen(theme.TEXT, 1))
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawRoundedRect(rect.adjusted(-1.5, -1.5, 1.5, 1.5), 3.5, 3.5)
 
 
-class CommitStrip(QWidget):
+class CommitStrip(_CommitHover, QWidget):
     """Ticker variant: one bar per day, height *and* colour carry the count.
 
     A 7-row grid does not fit in a 44 px bar, so the weekly structure is traded
@@ -425,10 +590,30 @@ class CommitStrip(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._commits = CommitMetrics()
+        self._install_hover()
 
     def set_commits(self, commits: CommitMetrics) -> None:
         self._commits = commits
+        self._hide_tip()
         self.update()
+
+    GAP = 2.0
+    TOP = 13.0
+
+    def _bar_width(self, count: int) -> float:
+        return max(2.0, (self.width() - self.GAP * (count - 1)) / count)
+
+    def _cell_at(self, pos: QPointF) -> tuple[tuple[str, int], QPointF] | None:
+        days = self._commits.days
+        if not days or pos.y() < self.TOP - 6:
+            return None
+        # Bars are ~3 px wide, so the whole pitch is the target - requiring a hit on the
+        # bar itself would make the tooltip nearly unreachable.
+        width = self._bar_width(len(days))
+        index = int(pos.x() // (width + self.GAP))
+        if index < 0 or index >= len(days):
+            return None
+        return days[index], QPointF(index * (width + self.GAP) + width / 2, self.TOP)
 
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
@@ -443,12 +628,13 @@ class CommitStrip(QWidget):
             theme.mono(6), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
         )
 
-        top, height = 13.0, max(10.0, self.height() - 14.0)
+        top, height = self.TOP, max(10.0, self.height() - 14.0)
         peak = self._commits.peak or 1
-        gap = 2.0
-        width = max(2.0, (self.width() - gap * (len(days) - 1)) / len(days))
+        gap = self.GAP
+        width = self._bar_width(len(days))
         painter.setPen(Qt.PenStyle.NoPen)
-        for index, (_day, count) in enumerate(days):
+        for index, day in enumerate(days):
+            count = day[1]
             level = self._commits.level_of(count)
             bar_h = 3.0 if count <= 0 else 4.0 + (height - 4.0) * count / peak
             rect = QRectF(index * (width + gap), top + height - bar_h, width, bar_h)
@@ -457,3 +643,10 @@ class CommitStrip(QWidget):
                 painter.drawRoundedRect(rect.adjusted(-1.5, -1.5, 1.5, 1.5), 2.5, 2.5)
             painter.setBrush(theme.COMMIT_LEVELS[level])
             painter.drawRoundedRect(rect, 1.5, 1.5)
+            if self._is_hovered(day):
+                painter.setPen(QPen(theme.TEXT, 1))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRoundedRect(
+                    QRectF(rect.left() - 1.5, top, rect.width() + 3, height), 2.0, 2.0
+                )
+                painter.setPen(Qt.PenStyle.NoPen)
