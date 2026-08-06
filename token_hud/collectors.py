@@ -21,6 +21,7 @@ import os
 import subprocess
 import time
 from datetime import UTC, date, datetime, timedelta
+from datetime import time as time_of_day
 from pathlib import Path
 
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal
@@ -191,9 +192,9 @@ def read_quota() -> QuotaMetrics:
 # --- commits -----------------------------------------------------------------
 
 _GH_QUERY = """
-query {
+query($from: DateTime!, $to: DateTime!) {
   viewer {
-    contributionsCollection {
+    contributionsCollection(from: $from, to: $to) {
       contributionCalendar {
         weeks { contributionDays { date contributionCount } }
       }
@@ -214,10 +215,22 @@ def _as_days(counts: dict[str, int], source: str) -> CommitMetrics:
 
 
 def read_commits_github() -> CommitMetrics | None:
-    """The profile calendar itself: every repo, private included. Needs `gh auth`."""
+    """The profile calendar itself: every repo, private included. Needs `gh auth`.
+
+    The window is sent with the local UTC offset: without it GitHub buckets the days in
+    UTC and today's commits land on yesterday's cell for east-of-Greenwich timezones.
+    """
+    days = _window()
+    start = datetime.combine(days[0], time_of_day.min).astimezone()
+    end = datetime.combine(days[-1], time_of_day.max).astimezone()
     try:
         proc = subprocess.run(
-            ["gh", "api", "graphql", "-f", f"query={_GH_QUERY}"],
+            [
+                "gh", "api", "graphql", "--cache", "0",
+                "-f", f"query={_GH_QUERY}",
+                "-F", f"from={start.isoformat()}",
+                "-F", f"to={end.isoformat()}",
+            ],
             capture_output=True,
             text=True,
             timeout=20,
@@ -287,3 +300,22 @@ def read_commits_git() -> CommitMetrics:
 
 def read_commits() -> CommitMetrics:
     return read_commits_github() or read_commits_git()
+
+
+STARTUP_GITHUB_ATTEMPTS = 3
+STARTUP_GITHUB_BACKOFF_S = 2.0
+
+
+def read_commits_startup() -> CommitMetrics:
+    """First read of the session: insist on GitHub before settling for the local scan.
+
+    At login `gh` may still be waiting on the keyring or the network, and one failed try
+    would pin the heatmap to the under-reporting git fallback for a full 10 minutes.
+    """
+    for attempt in range(STARTUP_GITHUB_ATTEMPTS):
+        metrics = read_commits_github()
+        if metrics is not None:
+            return metrics
+        if attempt < STARTUP_GITHUB_ATTEMPTS - 1:
+            time.sleep(STARTUP_GITHUB_BACKOFF_S)
+    return read_commits_git()

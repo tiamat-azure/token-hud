@@ -53,17 +53,23 @@ class MetricsStore(QObject):
         self._schedule(collectors.read_rtk, "rtk", collectors.RTK_INTERVAL_MS)
         self._schedule(collectors.read_headroom, "headroom", collectors.HEADROOM_INTERVAL_MS)
         self._schedule(collectors.read_quota, "quota", collectors.QUOTA_INTERVAL_MS)
-        self._schedule(collectors.read_commits, "commits", collectors.COMMITS_INTERVAL_MS)
+        self._schedule(
+            collectors.read_commits,
+            "commits",
+            collectors.COMMITS_INTERVAL_MS,
+            first=collectors.read_commits_startup,
+        )
 
     # --- polling ------------------------------------------------------------
 
-    def _schedule(self, fn, field: str, interval_ms: int) -> None:
+    def _schedule(self, fn, field: str, interval_ms: int, first=None) -> None:
+        """`first` overrides the reader used for the immediate startup read only."""
         timer = QTimer(self)
         timer.setInterval(interval_ms)
         timer.timeout.connect(lambda: self._dispatch(fn, field))
         timer.start()
         self._timers.append(timer)
-        self._dispatch(fn, field)
+        self._dispatch(first or fn, field)
 
     def _dispatch(self, fn, field: str) -> None:
         runnable = collectors.job(fn)
