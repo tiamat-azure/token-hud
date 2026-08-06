@@ -1,4 +1,16 @@
-"""The frameless HUD window: dashboard mode, collapsed ticker mode, tray control."""
+"""The frameless HUD window: dashboard mode, collapsed ticker mode, tray control.
+
+`HudWindow` holds a `QStackedWidget` with `DashboardView` and `TickerView`; double-click
+toggles between them, drag moves the window, and both the mode and the position persist
+through `QSettings`. It is the only consumer of `MetricsStore.snapshotReady`, and it
+fans the snapshot out to both views regardless of which one is visible.
+
+A one-second clock re-applies the last snapshot so countdowns keep ticking between polls,
+and a looping animation drives the alert pulse when a quota window crosses the thresholds
+in `theme`. Both are cosmetic: `apply()` must stay cheap, it runs every second.
+
+Layout uses plain Qt widgets; everything inside them is hand-painted by `gauges`.
+"""
 
 from __future__ import annotations
 

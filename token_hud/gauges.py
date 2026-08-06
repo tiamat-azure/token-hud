@@ -1,4 +1,15 @@
-"""Custom-painted neon gauges: KPI tile, donut, radial gauge, area chart, thin bar."""
+"""Custom-painted neon gauges: KPI tile, donut, radial gauge, area chart, thin bar.
+
+No stylesheets and no Qt Charts - every widget subclasses `_Panel` and draws itself in
+`paintEvent` with the palette and helpers from `theme`. Never hardcode a `QColor` here.
+
+Each gauge takes already-computed values through a `set_*` method and only formats and
+draws them; derivation belongs in `model`. The `fmt_*` helpers at the top are pure and
+unit-tested.
+
+Sizing is driven by the parent layout, so paint relative to `self.rect()` rather than to
+the fixed sizes in `hud`.
+"""
 
 from __future__ import annotations
 

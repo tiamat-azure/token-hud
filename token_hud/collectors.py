@@ -6,7 +6,12 @@ Sources:
   ~/.headroom/subscription_state.json     -> QuotaMetrics
   gh api graphql (fallback: git log)      -> CommitMetrics
 
-Only the commit calendar touches the network, and only every 10 minutes.
+Only the commit calendar touches the network, and only every 10 minutes; it falls back to
+a local `git log` scan, tunable through TOKEN_HUD_GIT_ROOTS / TOKEN_HUD_GIT_DEPTH.
+
+Every source is optional. A reader must never propagate an exception: on a missing file,
+a bad payload or a failing subprocess it returns a default-constructed metrics object so
+the HUD degrades to zeros instead of dying. The parsing here is what the tests cover.
 """
 
 from __future__ import annotations

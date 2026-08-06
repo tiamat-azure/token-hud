@@ -1,4 +1,14 @@
-"""Immutable value objects passed from the collectors to the UI thread."""
+"""Immutable value objects passed from the collectors to the UI thread.
+
+Every dataclass here is frozen and has defaults for all fields: a collector that fails
+returns a default-constructed instance, so the UI always renders, worst case as zeros.
+Update through `dataclasses.replace` or `Snapshot.merged`, never by assignment - the
+widgets rely on receiving a fresh object to know something changed.
+
+`Snapshot` aggregates the four sources and exposes the derived values the gauges read
+(`tokens_saved`, `usd_saved`, `breakdown`). Put new arithmetic here rather than in a
+`paintEvent`: this module is the part covered by `tests/test_metrics.py`.
+"""
 
 from __future__ import annotations
 

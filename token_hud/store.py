@@ -1,4 +1,16 @@
-"""Owns the polling timers, the current snapshot, and the persisted history."""
+"""Owns the polling timers, the current snapshot, and the persisted history.
+
+One `QTimer` per source, each firing a `collectors.job()` onto the global `QThreadPool`;
+results land back on the UI thread through the runnable's signal and are folded into a
+single `Snapshot` re-emitted as `snapshotReady`. Sources are independent - a slow or
+failing one never blocks the others.
+
+The rolling token-saved history (`HISTORY_POINTS` points, one every `HISTORY_INTERVAL_S`)
+backs the area chart and the per-hour rate, and is persisted to `history_path()` so the
+chart is not empty on restart. Points older than `HISTORY_MAX_AGE_S` are dropped on load.
+
+Keep this module free of blocking calls: everything it runs happens in the UI thread.
+"""
 
 from __future__ import annotations
 

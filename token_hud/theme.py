@@ -1,4 +1,13 @@
-"""Neon dark palette and small painting helpers shared by every gauge."""
+"""Neon dark palette and small painting helpers shared by every gauge.
+
+Single source of truth for colors, fonts and the quota alert thresholds (`WARN_PCT`,
+`CRIT_PCT`); change a color here and the whole HUD follows. `mono()` picks the first
+available font from `_MONO_CANDIDATES`, so it degrades gracefully on any machine.
+
+The glow effect is a wide translucent pen stroked under the sharp one - see `glow_pen`
+and `draw_arc`. There is no `QGraphicsEffect` anywhere; that keeps repaints cheap enough
+for the once-a-second refresh.
+"""
 
 from __future__ import annotations
 
