@@ -14,7 +14,7 @@ dev sync: ## Create the environment with dev dependencies
 	$(UV) sync
 
 run: ## Launch the HUD
-	$(UV) run python -m tiamat_hud
+	$(UV) run python -m token_hud
 
 test: ## Run the test suite
 	$(UV) run pytest -q

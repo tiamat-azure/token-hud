@@ -1,4 +1,4 @@
-"""Entry point: `python -m tiamat_hud`."""
+"""Entry point: `python -m token_hud`."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ from .store import MetricsStore
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("tiamat-hud")
-    app.setOrganizationName("tiamat")
+    app.setApplicationName("token-hud")
+    app.setOrganizationName("token-hud")
     app.setQuitOnLastWindowClosed(False)  # the tray keeps the process alive
 
     store = MetricsStore()

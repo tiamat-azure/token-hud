@@ -19,7 +19,7 @@ HISTORY_MAX_AGE_S = 6 * 3600
 
 def history_path() -> Path:
     base = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
-    directory = Path(base or Path.home() / ".local/share/tiamat-hud")
+    directory = Path(base or Path.home() / ".local/share/token-hud")
     directory.mkdir(parents=True, exist_ok=True)
     return directory / "history.json"
 

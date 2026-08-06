@@ -49,7 +49,7 @@ class _Header(QWidget):
         super().__init__(parent)
         self._right = "connexion…"
         self._right_color = theme.DIM2
-        self._left = "◉ tiamat hud"
+        self._left = "◉ token hud"
         self.setFixedHeight(16)
 
     def set_status(self, left: str, right: str, color: QColor) -> None:
@@ -133,7 +133,7 @@ class DashboardView(QWidget):
         model = snap.headroom.model or "claude"
         live = f"{snap.headroom.requests} req · maj 5 s" if snap.headroom.ok else "sources indisponibles"
         self.header.set_status(
-            f"◉ tiamat hud · {model}", f"● {live}",
+            f"◉ token hud · {model}", f"● {live}",
             theme.GREEN if snap.headroom.ok else theme.RED,
         )
 
@@ -207,7 +207,7 @@ class TickerView(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         theme.draw_text(
-            painter, QRectF(14, 0, 90, self.height()), "◉ TIAMAT", theme.CYAN,
+            painter, QRectF(14, 0, 90, self.height()), "◉ TOKEN HUD", theme.CYAN,
             theme.mono(8, QFont.Weight.DemiBold, spacing=18), glow=True,
         )
         x = 112.0
@@ -251,9 +251,9 @@ class HudWindow(QWidget):
         self._store = store
         self._drag_offset: QPoint | None = None
         self._alert_level = 0
-        self._settings = QSettings("tiamat", "hud")
+        self._settings = QSettings("token-hud", "hud")
 
-        self.setWindowTitle("Tiamat HUD")
+        self.setWindowTitle("Token HUD")
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -429,7 +429,7 @@ def tray_icon(parent, window: HudWindow) -> QSystemTrayIcon:
     painter.end()
 
     tray = QSystemTrayIcon(QIcon(pixmap), parent)
-    tray.setToolTip("Tiamat HUD - économies headroom + rtk")
+    tray.setToolTip("Token HUD - économies headroom + rtk")
 
     def refresh_menu(*_args) -> None:
         tray.setContextMenu(build_menu(window, tray_context=True))

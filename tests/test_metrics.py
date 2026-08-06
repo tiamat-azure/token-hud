@@ -10,9 +10,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tiamat_hud import collectors, theme  # noqa: E402
-from tiamat_hud.gauges import fmt_duration, fmt_tokens, fmt_usd  # noqa: E402
-from tiamat_hud.model import HeadroomMetrics, QuotaWindow, RtkMetrics, Snapshot  # noqa: E402
+from token_hud import collectors, theme  # noqa: E402
+from token_hud.gauges import fmt_duration, fmt_tokens, fmt_usd  # noqa: E402
+from token_hud.model import HeadroomMetrics, QuotaWindow, RtkMetrics, Snapshot  # noqa: E402
 
 
 def test_snapshot_totals_sum_every_saving_source():
@@ -122,7 +122,7 @@ def test_read_rtk_survives_broken_output(monkeypatch):
 def _commits(counts):
     from datetime import date, timedelta
 
-    from tiamat_hud.model import CommitMetrics
+    from token_hud.model import CommitMetrics
 
     today = date(2026, 8, 6)
     days = tuple(

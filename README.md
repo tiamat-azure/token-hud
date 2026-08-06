@@ -1,18 +1,20 @@
-# Tiamat HUD
+# ⚡ Token HUD
 
 ![Ticker to dashboard and back](images/demo.gif)
 
-Neon, Grafana-flavoured desktop widget for Claude Code economics: how many tokens
-`rtk` and `headroom` saved, how much that is worth, and how much of the Claude
-usage window is left.
+**Token HUD** is a neon, Grafana-flavoured desktop widget for Claude Code
+economics. It answers three questions at a glance: how many tokens `rtk` and
+`headroom` saved you, what that is worth in dollars, and how much of your Claude
+usage window is left before the next reset.
 
 Frameless, always on top, draggable, no taskbar entry. Two modes share one code
-base: a full **dashboard** (560x380) and a collapsed **ticker** bar (720x44).
-Double-click switches between them.
+base: a full **dashboard** (560x380) and a collapsed **ticker** bar (720x44) that
+lives quietly along an edge of the screen. Double-click switches between them,
+as in the animation above.
 
 ![Dashboard](images/dashboard.png)
 
-## Run
+## 🚀 Run
 
 The project is managed with [uv](https://docs.astral.sh/uv/) and driven through a
 Makefile.
@@ -25,12 +27,12 @@ make check  # ruff + pytest
 
 `make help` lists every target (`install`, `dev`, `run`, `test`, `lint`,
 `format`, `check`, `build`, `clean`, `distclean`). Without make: `uv sync` then
-`uv run python -m tiamat_hud`, or install the `tiamat-hud` script.
+`uv run python -m token_hud`, or install the `token-hud` script.
 
 Right-click the widget, or use the tray icon, for: show/hide, mode switch, quit.
-Window position and mode are remembered (`QSettings`, `tiamat/hud`).
+Window position and mode are remembered (`QSettings`, `token-hud/hud`).
 
-## Data sources
+## 🔌 Data sources
 
 Everything is read locally except the commit calendar, which is the only network
 hop and runs just once every 10 minutes.
@@ -53,7 +55,7 @@ Every read runs in a `QThreadPool` worker; the UI thread only receives a
 `Snapshot` via `MetricsStore.snapshotReady`. A missing or malformed source
 degrades to empty metrics and a red liveness dot - it never raises.
 
-## Commit heatmap
+## 🟩 Commit heatmap
 
 A GitHub-style rolling month: one column per calendar week, one row per weekday,
 dark green to neon green. Levels are **quantile** cut-offs like GitHub's own
@@ -74,7 +76,7 @@ panel labels itself `local` in that mode. Both failing leaves the grid empty wit
 
 ![Ticker](images/ticker.png)
 
-## Alerts
+## 🚨 Alerts
 
 ![Alert state](images/alert.png)
 
@@ -82,16 +84,16 @@ The window border is cyan below 70 % usage, solid orange from 70 %, and pulses
 red from 90 % (`theme.WARN_PCT` / `theme.CRIT_PCT`). Quota gauges follow the same
 scale.
 
-## History
+## 📈 History
 
 The trend panel needs points across restarts, so the saved-token series is
 persisted to `history.json` under the Qt app-data location (240 points, one every
 15 s, older than 6 h dropped on load).
 
-## Layout
+## 🗂️ Layout
 
 ```
-tiamat_hud/
+token_hud/
   __main__.py    entry point, tray, Ctrl+C handling
   hud.py         frameless window, dashboard + ticker views, tray menu
   gauges.py      QPainter widgets: KPI tile, donut, radial gauge, area, thin bar
@@ -105,7 +107,7 @@ pyproject.toml   uv/hatchling project definition, ruff and pytest config
 Makefile         install, run, test, lint, build, clean
 ```
 
-## Tests
+## ✅ Tests
 
 ```sh
 make test
@@ -114,7 +116,7 @@ make test
 Covers parsing, threshold colours, formatters and graceful degradation - no
 display required.
 
-## Known limits
+## ⚠️ Known limits
 
 - Wayland compositors may ignore `WindowStaysOnTopHint` and programmatic moves.
   Run under XWayland (`QT_QPA_PLATFORM=xcb`) if the widget will not stay on top.
