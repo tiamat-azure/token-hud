@@ -74,6 +74,17 @@ under-reports by construction (only cloned repos, committer email match), so the
 panel labels itself `local` in that mode. Both failing leaves the grid empty with
 `github indisponible`.
 
+That fallback walks the filesystem, so where it walks is configurable. It
+defaults to `~/workspaces`, `~/src` and `~/projects`, three levels deep:
+
+```sh
+TOKEN_HUD_GIT_ROOTS="$HOME/code:/srv/repos" TOKEN_HUD_GIT_DEPTH=2 make run
+```
+
+`TOKEN_HUD_GIT_ROOTS` takes a path-separated list (`~` expanded);
+`TOKEN_HUD_GIT_DEPTH` caps the descent. Both are read at scan time, and the scan
+only ever runs `git log`.
+
 ![Ticker](images/ticker.png)
 
 ## 🚨 Alerts

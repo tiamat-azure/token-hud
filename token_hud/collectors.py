@@ -12,6 +12,7 @@ Only the commit calendar touches the network, and only every 10 minutes.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 from datetime import UTC, date, datetime, timedelta
@@ -31,8 +32,27 @@ QUOTA_INTERVAL_MS = 15_000
 COMMITS_INTERVAL_MS = 600_000  # GitHub call is the only network hop - keep it rare
 
 COMMIT_DAYS = 30
-GIT_SCAN_ROOTS = (Path.home() / "workspaces",)
-GIT_SCAN_DEPTH = 3
+
+# The offline fallback walks the filesystem, so where it walks is the user's call:
+# TOKEN_HUD_GIT_ROOTS is a path-separated list, TOKEN_HUD_GIT_DEPTH caps the descent.
+GIT_ROOTS_ENV = "TOKEN_HUD_GIT_ROOTS"
+GIT_DEPTH_ENV = "TOKEN_HUD_GIT_DEPTH"
+DEFAULT_GIT_SCAN_ROOTS = (Path.home() / "workspaces", Path.home() / "src", Path.home() / "projects")
+DEFAULT_GIT_SCAN_DEPTH = 3
+
+
+def git_scan_roots() -> tuple[Path, ...]:
+    raw = os.environ.get(GIT_ROOTS_ENV, "").strip()
+    if not raw:
+        return DEFAULT_GIT_SCAN_ROOTS
+    return tuple(Path(part).expanduser() for part in raw.split(os.pathsep) if part.strip())
+
+
+def git_scan_depth() -> int:
+    try:
+        return max(1, int(os.environ.get(GIT_DEPTH_ENV, "")))
+    except ValueError:
+        return DEFAULT_GIT_SCAN_DEPTH
 
 
 class _Signals(QObject):
@@ -219,12 +239,13 @@ def read_commits_github() -> CommitMetrics | None:
 
 def _git_repos() -> list[Path]:
     repos: list[Path] = []
-    for root in GIT_SCAN_ROOTS:
+    max_depth = git_scan_depth()
+    for root in git_scan_roots():
         if not root.is_dir():
             continue
-        for git_dir in root.glob("/".join(["*"] * GIT_SCAN_DEPTH + [".git"])):
+        for git_dir in root.glob("/".join(["*"] * max_depth + [".git"])):
             repos.append(git_dir.parent)
-        for depth in range(1, GIT_SCAN_DEPTH):
+        for depth in range(1, max_depth):
             for git_dir in root.glob("/".join(["*"] * depth + [".git"])):
                 repos.append(git_dir.parent)
     return sorted(set(repos))

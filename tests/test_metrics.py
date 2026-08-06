@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -165,6 +166,25 @@ def test_read_commits_falls_back_to_git_when_github_unavailable(monkeypatch):
 
     monkeypatch.setattr(collectors, "read_commits_github", lambda: _commits([3]))
     assert collectors.read_commits().source == "github"  # GitHub wins when it answers
+
+
+def test_git_scan_roots_come_from_the_environment(monkeypatch, tmp_path):
+    monkeypatch.delenv(collectors.GIT_ROOTS_ENV, raising=False)
+    assert collectors.git_scan_roots() == collectors.DEFAULT_GIT_SCAN_ROOTS
+
+    monkeypatch.setenv(collectors.GIT_ROOTS_ENV, os.pathsep.join([str(tmp_path), "~/code", " "]))
+    assert collectors.git_scan_roots() == (tmp_path, Path.home() / "code")
+
+
+def test_git_scan_depth_falls_back_when_unset_or_invalid(monkeypatch):
+    monkeypatch.delenv(collectors.GIT_DEPTH_ENV, raising=False)
+    assert collectors.git_scan_depth() == collectors.DEFAULT_GIT_SCAN_DEPTH
+
+    monkeypatch.setenv(collectors.GIT_DEPTH_ENV, "nope")
+    assert collectors.git_scan_depth() == collectors.DEFAULT_GIT_SCAN_DEPTH
+
+    monkeypatch.setenv(collectors.GIT_DEPTH_ENV, "0")
+    assert collectors.git_scan_depth() == 1  # a zero-deep scan would find nothing
 
 
 def test_github_reader_returns_none_on_broken_payload(monkeypatch):
