@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HUD Néon - Widget natif PyQt6 (headroom + rtk + quota Claude)</title>
+<style>
+  :root{
+    --bg:#0b0e14; --bg2:#111721; --panel:#151b26; --panel2:#1b2230;
+    --grid:rgba(255,255,255,.06); --line:rgba(255,255,255,.10);
+    --txt:#e6edf6; --dim:#8b98ad; --dim2:#5d6979;
+    --cy:#22d3ee; --mg:#f0f; --vi:#a78bfa; --gr:#39ff88; --or:#ffb020; --rd:#ff4d6d; --bl:#3b82f6;
+    --mono:"JetBrains Mono","Fira Code",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:"Inter",-apple-system,Segoe UI,Roboto,sans-serif;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  :where(.grid,.flex)>*{min-width:0}
+  :where(p,h1,h2,h3,h4,li,td,th,.badge){overflow-wrap:anywhere}
+  body{margin:0;background:
+      radial-gradient(1200px 600px at 15% -10%,rgba(34,211,238,.10),transparent 60%),
+      radial-gradient(900px 500px at 90% 0%,rgba(167,139,250,.10),transparent 60%),
+      var(--bg);
+    color:var(--txt);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased}
+  main{max-width:1240px;margin:0 auto;padding:40px 24px 90px}
+  h1{font-size:2.1rem;margin:0 0 6px;letter-spacing:-.02em}
+  h2{font-size:1.28rem;margin:0 0 4px;letter-spacing:-.01em}
+  h3{font-size:.95rem;margin:0 0 8px;letter-spacing:.02em}
+  .sub{color:var(--dim);margin:0}
+  .eyebrow{font-family:var(--mono);font-size:.7rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cy)}
+  section{margin-top:52px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:14px;padding:20px}
+  .grid{display:grid;gap:18px}
+  .g2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+  .g3{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+  .flex{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  .mono{font-family:var(--mono)}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:.68rem;
+    padding:3px 9px;border-radius:999px;border:1px solid currentColor;letter-spacing:.06em;text-transform:uppercase}
+  .b-cy{color:var(--cy)} .b-gr{color:var(--gr)} .b-or{color:var(--or)} .b-rd{color:var(--rd)} .b-vi{color:var(--vi)} .b-dim{color:var(--dim2)}
+  .pro{color:var(--gr)} .con{color:var(--rd)}
+  ul.pm{list-style:none;padding:0;margin:8px 0 0;font-size:.88rem}
+  ul.pm li{display:flex;gap:9px;padding:4px 0;color:var(--dim)}
+  ul.pm li b{font-family:var(--mono);flex:none;width:12px;text-align:center}
+  ul.pm li.p b{color:var(--gr)} ul.pm li.m b{color:var(--rd)}
+  table{width:100%;border-collapse:collapse;font-size:.86rem}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-family:var(--mono);font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--dim2)}
+  code{font-family:var(--mono);font-size:.84em;background:rgba(255,255,255,.05);padding:1px 5px;border-radius:5px;color:var(--cy)}
+  pre{background:#0a0d13;border:1px solid var(--line);border-radius:10px;padding:14px;overflow:auto;font-family:var(--mono);font-size:.78rem;color:#cbd5e1}
+  .mermaid{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .hr{height:1px;background:linear-gradient(90deg,transparent,var(--line),transparent);margin:36px 0}
+  .reco{border:1px solid rgba(57,255,136,.35);background:linear-gradient(180deg,rgba(57,255,136,.07),transparent)}
+  .stage{background:
+      linear-gradient(rgba(255,255,255,.02) 1px,transparent 1px) 0 0/22px 22px,
+      linear-gradient(90deg,rgba(255,255,255,.02) 1px,transparent 1px) 0 0/22px 22px,
+      #05070b;
+    border:1px dashed rgba(255,255,255,.08);border-radius:14px;padding:26px;display:flex;justify-content:center;overflow:auto}
+
+  /* ---------- Maquettes du widget (rendu fidèle du futur QWidget) ---------- */
+  .hud{font-family:var(--mono);background:rgba(10,13,19,.86);border:1px solid rgba(34,211,238,.22);
+    border-radius:14px;box-shadow:0 0 0 1px rgba(0,0,0,.6),0 18px 50px rgba(0,0,0,.65),0 0 26px rgba(34,211,238,.10);
+    backdrop-filter:blur(9px);color:var(--txt)}
+  .hud-grip{width:100%;height:16px;display:flex;align-items:center;gap:4px;padding:0 10px;opacity:.5}
+  .hud-grip i{width:3px;height:3px;border-radius:50%;background:var(--dim2)}
+  .neon{text-shadow:0 0 10px currentColor,0 0 26px currentColor}
+  .kpi-l{font-size:.6rem;letter-spacing:.16em;text-transform:uppercase;color:var(--dim2)}
+  .kpi-v{font-size:1.5rem;font-weight:600;line-height:1.1}
+  .kpi-d{font-size:.66rem;color:var(--dim)}
+  .bar{height:5px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .bar>i{display:block;height:100%;border-radius:99px}
+  .sep{height:1px;background:var(--line)}
+  .vsep{width:1px;align-self:stretch;background:var(--line)}
+
+  /* S1 - barre HUD */
+  .s1{display:flex;align-items:center;gap:16px;padding:8px 14px;width:min(720px,100%)}
+  .s1 .cell{display:flex;flex-direction:column;gap:1px}
+  .s1 .v{font-size:.95rem;font-weight:600}
+  .s1 .l{font-size:.55rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim2)}
+
+  /* S2 - carte compacte */
+  .s2{width:min(360px,100%);padding:12px 14px 14px}
+  .s2 .hdr{display:flex;justify-content:space-between;align-items:center;font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:var(--dim2)}
+  .s2 .kpis{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+
+  /* S3 - dashboard */
+  .s3{width:min(560px,100%);padding:12px 14px 14px}
+  .s3 .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+  .tile{background:rgba(255,255,255,.025);border:1px solid var(--line);border-radius:10px;padding:9px 10px}
+
+  .legend{display:flex;flex-direction:column;gap:5px;font-size:.66rem;color:var(--dim)}
+  .legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px}
+  .caption{font-size:.75rem;color:var(--dim2);text-align:center;margin-top:10px;font-family:var(--mono)}
+
+  form.q{border:1px solid rgba(167,139,250,.3);background:linear-gradient(180deg,rgba(167,139,250,.07),transparent);border-radius:14px;padding:20px}
+  form.q label{display:flex;gap:10px;align-items:flex-start;padding:9px 11px;border:1px solid var(--line);border-radius:10px;cursor:pointer;background:rgba(255,255,255,.02)}
+  form.q label:hover{border-color:rgba(34,211,238,.45)}
+  form.q input{accent-color:var(--cy);margin-top:3px}
+  button{font-family:var(--mono);font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;
+    background:transparent;color:var(--cy);border:1px solid var(--cy);border-radius:9px;padding:9px 16px;cursor:pointer}
+  button:hover{background:rgba(34,211,238,.12);box-shadow:0 0 18px rgba(34,211,238,.25)}
+</style>
+</head>
+<body>
+<main>
+
+<p class="eyebrow">Livré · widget natif PyQt6</p>
+
+<section style="margin-top:0">
+  <div class="card reco">
+    <div class="flex" style="justify-content:space-between;margin-bottom:6px">
+      <h2 style="margin:0">✅ Construit : scénario C repliable en A</h2>
+      <span class="badge b-gr">captures du vrai widget</span>
+    </div>
+    <p class="sub" style="font-size:.9rem">Vos choix appliqués : <b>dashboard 560×380 ↔ ticker 720×44</b> (double-clic), <b>historique persistant</b>, <b>alertes quota 70 / 90 %</b>, <b>icône systray</b>. Images ci-dessous = <code>QWidget.grab()</code> sur le widget réel alimenté par vos données live.</p>
+
+    <div style="margin-top:18px">
+      <div class="stage"><img src="shots/dashboard.png" alt="Dashboard du HUD" style="border-radius:14px"></div>
+      <p class="caption">Mode dashboard · données live (rtk 43 cmd, headroom 251 req, quota 5 h 17 %)</p>
+    </div>
+
+    <div class="grid g2" style="margin-top:20px;align-items:start">
+      <div>
+        <div class="stage" style="padding:18px"><img src="shots/ticker.png" alt="Barre ticker du HUD" style="border-radius:10px"></div>
+        <p class="caption">Mode ticker · double-clic pour basculer</p>
+      </div>
+      <div>
+        <div class="stage" style="padding:18px"><img src="shots/alert.png" alt="HUD en alerte quota" style="border-radius:10px"></div>
+        <p class="caption">Alerte : 5 h à 93 % (rouge pulsé) · 7 j à 74 % (orange)</p>
+      </div>
+    </div>
+
+    <div class="grid g3" style="margin-top:20px">
+      <div class="card" style="padding:14px"><h3 style="color:var(--cy);margin:0 0 6px">Lancer</h3>
+        <pre style="font-size:.72rem">python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python -m tiamat_hud</pre></div>
+      <div class="card" style="padding:14px"><h3 style="color:var(--vi);margin:0 0 6px">Tests</h3>
+        <pre style="font-size:.72rem">.venv/bin/python -m pytest tests -q
+# 12 passed</pre>
+        <p class="sub" style="font-size:.78rem;margin:8px 0 0">Parsing, seuils, formats, dégradation si source absente. Sans affichage.</p></div>
+      <div class="card" style="padding:14px"><h3 style="color:var(--gr);margin:0 0 6px">Fichiers</h3>
+        <p class="sub mono" style="font-size:.74rem;margin:0">tiamat_hud/{__main__,hud,gauges,store,collectors,model,theme}.py<br>tests/test_metrics.py · README.md</p></div>
+    </div>
+    <p class="sub" style="font-size:.82rem;margin-top:14px">Environnement : PyQt6 installé dans <code>.venv</code> sur Python 3.14.4, <b>Qt 6.11</b>. Vérifié en réel sur X11 (<code>DISPLAY=:0</code>).</p>
+  </div>
+</section>
+
+<section id="commits">
+  <p class="eyebrow">Livré · votre choix implémenté</p>
+  <h2>7 · Heatmap de commits GitHub - mois glissant</h2>
+
+  <div class="card reco" style="margin-bottom:22px">
+    <div class="flex" style="justify-content:space-between;margin-bottom:8px">
+      <h3 style="margin:0">✅ Option 1 + strip ticker · source gh GraphQL avec repli <code>git log</code></h3>
+      <span class="badge b-gr">18 tests · captures réelles</span>
+    </div>
+    <p class="sub" style="font-size:.88rem;margin:0 0 14px">Les cinq indicateurs d'origine du ticker sont conservés, le strip commits est <b>suffixé</b> derrière un séparateur. Le dashboard reste à 560 × 380.</p>
+    <div class="stage"><img src="shots/dashboard.png" alt="Dashboard avec heatmap" style="border-radius:14px"></div>
+    <p class="caption">Heatmap logée sous la légende du donut · 57 contributions, pic 14</p>
+    <div class="stage" style="padding:18px;margin-top:14px"><img src="shots/ticker.png" alt="Ticker avec strip commits" style="border-radius:10px"></div>
+    <p class="caption">Ticker : 5 indicateurs initiaux intacts + strip 30 jours suffixé</p>
+    <div class="grid g3" style="margin-top:18px">
+      <div class="card" style="padding:14px"><h3 style="color:var(--gr);margin:0 0 6px">Repli hors ligne</h3>
+        <p class="sub" style="font-size:.8rem;margin:0">Sans <code>gh</code>, <code>git log</code> balaie les clones locaux (email du committer). Sous-estime par construction, donc le panneau s'étiquette <code>local</code>. Les deux en échec : grille vide, « github indisponible ».</p></div>
+      <div class="card" style="padding:14px"><h3 style="color:var(--cy);margin:0 0 6px">Coût</h3>
+        <p class="sub" style="font-size:.8rem;margin:0">Un seul appel réseau, toutes les <b>10 min</b>, dans un <code>QRunnable</code>. Le reste du HUD reste 100 % local.</p></div>
+      <div class="card" style="padding:14px"><h3 style="color:var(--vi);margin:0 0 6px">Correctif au passage</h3>
+        <p class="sub" style="font-size:.8rem;margin:0">Les reprises de session créaient un pic aberrant dans la courbe : les paires de points espacées de plus de 45 s sont désormais ignorées.</p></div>
+    </div>
+  </div>
+
+  <p class="eyebrow" style="display:block;margin-bottom:10px">Dossier de conception de cette section</p>
+  <p class="sub" style="margin-bottom:16px">Même grammaire que le graphe de contributions GitHub, retranscrite en néon : vert sombre pour un jour creux, vert saturé + halo pour un pic. <b>Toutes les cellules ci-dessous affichent vos vraies contributions</b> des 30 derniers jours (compte <code>tiamat-azure</code>, 57 contributions sur l'année, pic à 14 le 21/07).</p>
+
+  <div class="card" style="margin-bottom:22px">
+    <h3>Échelle de couleurs</h3>
+    <p class="sub" style="font-size:.86rem;margin:0 0 12px">GitHub découpe en 4 niveaux par <b>quantiles</b>, pas par valeurs fixes - indispensable ici : avec un pic à 14, une échelle fixe 1/3/6/9 écraserait tout. Le niveau max reçoit seul le halo, sinon la grille entière brille et perd sa hiérarchie.</p>
+    <div id="scale" class="flex" style="gap:18px"></div>
+  </div>
+
+  <!-- C-1 -->
+  <div class="card reco" style="margin-bottom:22px">
+    <div class="flex" style="justify-content:space-between">
+      <div><h3 style="margin:0">Option 1 · <span style="color:var(--gr)">dans l'espace libre du panneau donut</span> <span class="badge b-gr" style="margin-left:8px">recommandé</span></h3>
+      <p class="sub" style="font-size:.85rem;margin:2px 0 0">Le panneau répartition a ~110 px de vide sous la légende. La heatmap s'y loge sans changer la taille du dashboard.</p></div>
+      <span class="badge b-dim">560 × 380 inchangé</span>
+    </div>
+    <div class="stage" style="margin-top:16px">
+      <div class="hud" style="width:min(536px,100%);padding:10px 12px 12px">
+        <div class="flex" style="justify-content:space-between;font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:var(--dim2)">
+          <span>répartition</span><span style="color:var(--dim2)">commits · 30 j</span>
+        </div>
+        <div class="flex" style="gap:14px;margin-top:10px;flex-wrap:nowrap;align-items:flex-start">
+          <svg width="104" height="104" viewBox="0 0 42 42" style="flex:none">
+            <circle cx="21" cy="21" r="15.9" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="4.5"/>
+            <g stroke-width="4.5" fill="none" transform="rotate(-90 21 21)">
+              <circle cx="21" cy="21" r="15.9" stroke="#22d3ee" stroke-dasharray="65.4 34.6"/>
+              <circle cx="21" cy="21" r="15.9" stroke="#a78bfa" stroke-dasharray="27.1 72.9" stroke-dashoffset="-65.4"/>
+              <circle cx="21" cy="21" r="15.9" stroke="#39ff88" stroke-dasharray="7.5 92.5" stroke-dashoffset="-92.5"/>
+            </g>
+            <text x="21" y="20.4" text-anchor="middle" font-size="6.4" font-weight="600" fill="#e6edf6" font-family="monospace">65,8K</text>
+            <text x="21" y="25.6" text-anchor="middle" font-size="3" fill="#8b98ad" font-family="monospace">TOKENS</text>
+          </svg>
+          <div style="flex:1">
+            <div class="legend" style="margin-bottom:10px">
+              <div><i style="background:#22d3ee"></i>rtk CLI <b style="color:var(--txt);float:right">42,8K</b></div>
+              <div><i style="background:#a78bfa"></i>headroom out <b style="color:var(--txt);float:right">18,1K</b></div>
+              <div><i style="background:#39ff88"></i>compression <b style="color:var(--txt);float:right">4 913</b></div>
+            </div>
+            <div class="heatmap" data-cell="11" data-gap="3" data-labels="1"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="grid g2" style="margin-top:16px">
+      <ul class="pm">
+        <li class="p"><b>+</b>Zéro pixel supplémentaire : le dashboard reste à 560 × 380.</li>
+        <li class="p"><b>+</b>Voisinage cohérent : « ce que j'ai produit » à côté de « ce que ça m'a coûté ».</li>
+        <li class="p"><b>+</b>Cellules à 11 px : au-dessus du seuil de survol confortable.</li>
+      </ul>
+      <ul class="pm">
+        <li class="m"><b>−</b>Le panneau devient dense : deux lectures concurrentes dans une même boîte.</li>
+        <li class="m"><b>−</b>Plus de place pour une 4ᵉ catégorie dans la légende du donut.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- C-2 -->
+  <div class="card" style="margin-bottom:22px">
+    <div class="flex" style="justify-content:space-between">
+      <div><h3 style="margin:0">Option 2 · <span style="color:var(--cy)">bandeau dédié pleine largeur</span></h3>
+      <p class="sub" style="font-size:.85rem;margin:2px 0 0">Une ligne à part sous les jauges. Le dashboard passe à 560 × 442 px.</p></div>
+      <span class="badge b-or">+62 px de hauteur</span>
+    </div>
+    <div class="stage" style="margin-top:16px">
+      <div class="hud" style="width:min(536px,100%);padding:10px 12px 12px">
+        <div class="flex" style="justify-content:space-between;font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:var(--dim2)">
+          <span>activité commits · 30 jours glissants</span>
+          <span><span style="color:var(--gr)">57</span> contributions · pic 14</span>
+        </div>
+        <div class="flex" style="gap:16px;margin-top:10px;align-items:center;flex-wrap:nowrap">
+          <div class="heatmap" data-cell="13" data-gap="4" data-labels="1" data-months="1"></div>
+          <div style="flex:1;min-width:120px">
+            <div class="kpi-l">série en cours</div>
+            <div class="kpi-v" style="font-size:1.15rem;color:var(--gr)">2 j</div>
+            <div class="kpi-d">meilleure série 30 j : 6 j</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="grid g2" style="margin-top:16px">
+      <ul class="pm">
+        <li class="p"><b>+</b>Grille lisible, cellules 13 px, place pour les étiquettes de jours et de mois.</li>
+        <li class="p"><b>+</b>Accueille des indicateurs dérivés (série en cours, meilleure série) sans écraser le reste.</li>
+        <li class="p"><b>+</b>Aucun compromis sur les panneaux existants.</li>
+      </ul>
+      <ul class="pm">
+        <li class="m"><b>−</b>442 px de haut : le HUD devient franchement présent sur un 1080p.</li>
+        <li class="m"><b>−</b>Deux « lignes du bas » concurrentes : quota et commits se disputent l'attention.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Ticker -->
+  <div class="card" style="margin-bottom:22px">
+    <div class="flex" style="justify-content:space-between">
+      <div><h3 style="margin:0">Mode ticker · <span style="color:var(--vi)">strip 30 jours sur une ligne</span></h3>
+      <p class="sub" style="font-size:.85rem;margin:2px 0 0">44 px de haut interdisent une grille 7 lignes. Une cellule par jour, hauteur proportionnelle, même échelle de vert. Le pic reste immédiatement repérable.</p></div>
+      <span class="badge b-dim">720 × 44 inchangé</span>
+    </div>
+    <div class="stage" style="margin-top:16px">
+      <div class="hud" style="width:min(720px,100%);display:flex;align-items:center;gap:14px;padding:6px 14px">
+        <span class="neon" style="color:var(--cy);font-size:.78rem;letter-spacing:.18em">◉ TIAMAT</span>
+        <div class="vsep"></div>
+        <div style="display:flex;flex-direction:column;gap:1px"><span style="font-size:.92rem;font-weight:600;color:var(--gr)">65,8K</span><span class="l" style="font-size:.55rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim2)">tok saved</span></div>
+        <div style="display:flex;flex-direction:column;gap:1px"><span style="font-size:.92rem;font-weight:600;color:var(--cy)">83 % libre</span><span class="l" style="font-size:.55rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim2)">quota 5 h</span></div>
+        <div class="vsep"></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:2px;min-width:180px">
+          <div class="flex" style="justify-content:space-between"><span style="font-size:.55rem;letter-spacing:.14em;text-transform:uppercase;color:var(--dim2)">commits 30 j</span><span style="font-size:.55rem;color:var(--gr)">57 · pic 14</span></div>
+          <div id="strip" style="display:flex;gap:2px;align-items:flex-end;height:18px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="grid g2" style="margin-top:16px">
+      <ul class="pm">
+        <li class="p"><b>+</b>Tient dans les 44 px sans toucher aux autres cellules.</li>
+        <li class="p"><b>+</b>Double codage hauteur + couleur : lisible même à 2 px de large par jour.</li>
+      </ul>
+      <ul class="pm">
+        <li class="m"><b>−</b>Perd la structure hebdomadaire : on ne repère plus « les week-ends creux ».</li>
+        <li class="m"><b>−</b>Une cellule ≈ 6 px : le survol jour par jour n'est pas praticable.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Data source -->
+  <div class="card">
+    <h3>D'où viennent les commits</h3>
+    <table>
+      <thead><tr><th>Source</th><th>Ce qu'on obtient</th><th>Coût / risque</th><th></th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b><code>gh api graphql</code></b><br><span class="kpi-d">contributionsCollection</span></td>
+          <td>Exactement ce que montre la page de profil : tous dépôts, publics et privés, agrégés par jour avec le <code>weekday</code> officiel</td>
+          <td>Appel réseau 300-600 ms, à cacher 10 min ; dépend de <code>gh auth</code></td>
+          <td><span class="badge b-gr">retenu</span></td>
+        </tr>
+        <tr>
+          <td><code>git log</code> local</td>
+          <td>Commits des dépôts présents sur la machine</td>
+          <td>Hors ligne et instantané, mais faux par construction : rate tout dépôt non cloné</td>
+          <td><span class="badge b-or">repli</span></td>
+        </tr>
+        <tr>
+          <td>API REST <code>/events</code></td>
+          <td>Flux d'événements publics</td>
+          <td>Fenêtre de 90 événements, exclut le privé - ne reproduit pas le graphe de profil</td>
+          <td><span class="badge b-dim">non</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="sub" style="font-size:.83rem;margin-top:12px">Vérifié à l'instant : <code>gh auth status</code> connecté en <b>tiamat-azure</b>, la requête GraphQL renvoie bien les 30 jours utilisés dans ces maquettes. Le collecteur suivra le motif existant (<code>QRunnable</code> hors thread UI, intervalle 600 s, dégradation silencieuse si <code>gh</code> absent : la grille reste au niveau 0 et l'en-tête indique « github indisponible »).</p>
+  </div>
+
+  <form class="q" data-lavish-question="commits" style="margin-top:20px" onsubmit="event.preventDefault();
+    const f=new FormData(event.currentTarget); const p=f.get('place'); const s=f.get('src'); if(!p) return;
+    window.lavish.queuePrompt('Implémenter la heatmap de commits : placement ' + p + ', source ' + s,
+      {tag:'choice', text:'Heatmap commits : ' + p + ' / ' + s, element:event.currentTarget, data:{question:'commits', placement:p, source:s}});">
+    <h3 style="color:var(--gr)">Quelle version de la heatmap construire ?</h3>
+    <div class="grid g2" style="margin:12px 0">
+      <div style="display:grid;gap:8px">
+        <span class="kpi-l">Placement dans le dashboard</span>
+        <label><input type="radio" name="place" value="option 1 - dans le panneau donut, taille inchangée" checked><span><b>Option 1</b> <span class="badge b-gr" style="font-size:.6rem">reco</span><br><span class="kpi-d">560 × 380 conservé</span></span></label>
+        <label><input type="radio" name="place" value="option 2 - bandeau dédié, dashboard 560x442"><span><b>Option 2</b><br><span class="kpi-d">bandeau dédié, +62 px</span></span></label>
+        <label><input type="radio" name="place" value="option 1 + strip dans le ticker"><span><b>Option 1 + strip ticker</b><br><span class="kpi-d">les deux modes couverts</span></span></label>
+      </div>
+      <div style="display:grid;gap:8px">
+        <span class="kpi-l">Source de données</span>
+        <label><input type="radio" name="src" value="gh api graphql contributionsCollection" checked><span><b>gh GraphQL</b><br><span class="kpi-d">identique au profil GitHub</span></span></label>
+        <label><input type="radio" name="src" value="gh GraphQL avec repli git log local"><span><b>gh + repli git log</b><br><span class="kpi-d">fonctionne hors ligne, valeurs partielles</span></span></label>
+        <label><input type="radio" name="src" value="git log local uniquement"><span><b>git log local seul</b><br><span class="kpi-d">aucune dépendance réseau</span></span></label>
+      </div>
+    </div>
+    <button type="submit">Valider et implémenter</button>
+  </form>
+</section>
+
+<script>
+  // Vraies contributions des 30 derniers jours (gh api graphql, compte tiamat-azure).
+  const COMMITS = [0,0,0,0,0,0,0,0,0,0,0,0,5,14,6,3,8,7,0,5,0,0,0,0,0,0,5,0,3,1];
+  const LEVELS = ["#0f1a15","#14532d","#1f8a4c","#2ee06f","#39ff88"];
+  const DAYS = ["L","M","M","J","V","S","D"];
+
+  // Quantiles sur les jours actifs, comme GitHub - une échelle fixe écraserait tout.
+  const active = COMMITS.filter(v => v > 0).sort((a, b) => a - b);
+  function level(v){
+    if (v === 0 || !active.length) return 0;
+    const q = i => active[Math.min(active.length - 1, Math.floor(active.length * i))];
+    if (v <= q(0.25)) return 1;
+    if (v <= q(0.55)) return 2;
+    if (v <= q(0.85)) return 3;
+    return 4;
+  }
+  function cellStyle(v, size){
+    const l = level(v);
+    const glow = l === 4 ? `box-shadow:0 0 9px ${LEVELS[4]},0 0 3px ${LEVELS[4]};` : "";
+    return `width:${size}px;height:${size}px;border-radius:${Math.max(2, size * .22)}px;background:${LEVELS[l]};${glow}`;
+  }
+
+  document.querySelectorAll(".heatmap").forEach(host => {
+    const size = +host.dataset.cell, gap = +host.dataset.gap;
+    const weeks = 5, wrap = document.createElement("div");
+    wrap.style.cssText = `display:flex;gap:${gap}px`;
+    if (host.dataset.labels){
+      const col = document.createElement("div");
+      col.style.cssText = `display:flex;flex-direction:column;gap:${gap}px;margin-right:2px`;
+      DAYS.forEach((d, i) => {
+        const cell = document.createElement("div");
+        cell.style.cssText = `width:10px;height:${size}px;font:600 7px var(--mono);color:#5d6979;display:flex;align-items:center`;
+        cell.textContent = i % 2 ? "" : d;
+        col.appendChild(cell);
+      });
+      wrap.appendChild(col);
+    }
+    for (let w = 0; w < weeks; w++){
+      const col = document.createElement("div");
+      col.style.cssText = `display:flex;flex-direction:column;gap:${gap}px`;
+      for (let d = 0; d < 7; d++){
+        const index = w * 7 + d;
+        const value = index < COMMITS.length ? COMMITS[index] : 0;
+        const cell = document.createElement("div");
+        cell.style.cssText = cellStyle(value, size);
+        cell.title = `${value} commit${value > 1 ? "s" : ""}`;
+        col.appendChild(cell);
+      }
+      wrap.appendChild(col);
+    }
+    host.appendChild(wrap);
+    if (host.dataset.months){
+      const months = document.createElement("div");
+      months.style.cssText = `display:flex;justify-content:space-between;font:600 7px var(--mono);` +
+        `color:#5d6979;letter-spacing:.14em;margin-top:5px;padding-left:${size + 4}px`;
+      months.innerHTML = "<span>JUIL.</span><span>AOÛT</span>";
+      host.appendChild(months);
+    }
+  });
+
+  const strip = document.getElementById("strip");
+  if (strip){
+    const peak = Math.max(...COMMITS);
+    COMMITS.forEach(v => {
+      const l = level(v), h = v ? 5 + Math.round(13 * v / peak) : 3;
+      const bar = document.createElement("div");
+      bar.style.cssText = `flex:1;height:${h}px;border-radius:1.5px;background:${LEVELS[l]};` +
+        (l === 4 ? `box-shadow:0 0 8px ${LEVELS[4]};` : "");
+      bar.title = `${v} commit(s)`;
+      strip.appendChild(bar);
+    });
+  }
+
+  const scale = document.getElementById("scale");
+  if (scale){
+    [["0 commit", 0], ["faible", 1], ["moyen", 2], ["fort", 3], ["pic", 4]].forEach(([label, l]) => {
+      const box = document.createElement("div");
+      box.className = "flex";
+      box.style.cssText = "gap:7px;align-items:center";
+      box.innerHTML = `<span style="width:14px;height:14px;border-radius:3px;display:inline-block;background:${LEVELS[l]};` +
+        (l === 4 ? `box-shadow:0 0 10px ${LEVELS[4]}` : "") + `"></span>` +
+        `<span class="mono" style="font-size:.72rem;color:var(--dim)">${label}</span>`;
+      scale.appendChild(box);
+    });
+  }
+</script>
+
+<div class="hr"></div>
+<p class="eyebrow">Dossier de conception (référence)</p>
+<h1>HUD Néon <span class="mono" style="color:var(--cy)">tiamat</span> - économies headroom + rtk, quota Claude</h1>
+<p class="sub">Widget PyQt6 sans fenêtre ni bordure, toujours visible, style Grafana sombre + accents néon. Trois scénarios de densité, une bibliothèque de gauges, et le câblage aux sources de données <b>réelles</b> déjà présentes sur la machine.</p>
+
+<div class="flex" style="margin-top:14px">
+  <span class="badge b-cy">PyQt6 6.9 · Qt 6.9</span>
+  <span class="badge b-vi">frameless + translucent</span>
+  <span class="badge b-gr">données live vérifiées</span>
+  <span class="badge b-or">PyQt6 pas encore installé ici</span>
+</div>
+
+<!-- ============ SOURCES ============ -->
+<section>
+  <h2>1 · Les indicateurs existent déjà - voici d'où ils viennent</h2>
+  <p class="sub" style="margin-bottom:14px">Valeurs relevées sur cette machine le 2026-08-06. Aucune donnée inventée dans les maquettes ci-dessous.</p>
+  <div class="card">
+    <table>
+      <thead><tr><th>Indicateur</th><th>Source</th><th>Valeur réelle relevée</th><th>Coût de lecture</th></tr></thead>
+      <tbody>
+        <tr><td><b>Tokens économisés rtk</b></td><td><code>rtk gain -f json</code></td><td class="mono" style="color:var(--gr)">42 803 tok · 91,7 % · 38 cmd</td><td>subprocess ~40 ms</td></tr>
+        <tr><td><b>Compression headroom</b></td><td><code>~/.headroom/proxy_savings.json</code> → <code>lifetime</code></td><td class="mono" style="color:var(--gr)">4 472 tok · 226 requêtes</td><td>lecture fichier</td></tr>
+        <tr><td><b>Économie output headroom</b></td><td>idem → <code>output_tokens_saved</code></td><td class="mono" style="color:var(--gr)">15 262 tok · 0,23 $</td><td>lecture fichier</td></tr>
+        <tr><td><b>Économie cache</b></td><td>idem → <code>cache_savings_usd</code></td><td class="mono" style="color:var(--gr)">15,39 $ · 5,13 M tok lus</td><td>lecture fichier</td></tr>
+        <tr><td><b>Dépense réelle</b></td><td>idem → <code>total_input_cost_usd</code></td><td class="mono" style="color:var(--or)">17,51 $</td><td>lecture fichier</td></tr>
+        <tr><td><b>Quota 5 h / 7 j</b></td><td><code>~/.headroom/subscription_state.json</code> → <code>latest</code></td><td class="mono" style="color:var(--cy)">5 h : 6 % · 7 j : 0 % · reset 03:50Z</td><td>lecture fichier</td></tr>
+        <tr><td><b>Crédits extra</b></td><td>idem → <code>extra_usage</code></td><td class="mono">0,00 $ / 40,00 $</td><td>lecture fichier</td></tr>
+        <tr><td><b>Flux d'événements</b></td><td><code>~/.headroom/savings_events.jsonl</code> (append-only)</td><td class="mono">1 ligne / requête, <code>saved</code> + <code>cost_usd</code></td><td>tail incrémental</td></tr>
+      </tbody>
+    </table>
+    <p class="sub" style="font-size:.82rem;margin-top:14px">⚠︎ Deux pièges déjà identifiés : <b>(a)</b> <code>five_hour.limit</code> vaut <code>0</code> - seul <code>utilization_pct</code> est fiable, donc « tokens restants » s'affiche en <b>% restant + temps avant reset</b>, pas en tokens absolus ; <b>(b)</b> <code>rtk cc-economics</code> est actuellement cassé (ccusage : <code>missing field `month`</code>) - à ne pas mettre dans le chemin critique.</p>
+  </div>
+</section>
+
+<!-- ============ ARCHITECTURE ============ -->
+<section>
+  <h2>2 · Architecture - collecte hors du thread UI</h2>
+  <p class="sub" style="margin-bottom:14px">Un seul <code>QTimer</code> côté UI ; toute I/O (subprocess rtk, lecture JSON) part dans un <code>QThreadPool</code> pour ne jamais figer le rendu néon.</p>
+  <div class="mermaid">
+flowchart LR
+  subgraph SRC["Sources locales"]
+    A1["rtk gain -f json"]
+    A2["proxy_savings.json"]
+    A3["subscription_state.json"]
+    A4["savings_events.jsonl"]
+  end
+  subgraph COL["Collecteurs (QRunnable, hors UI)"]
+    C1["RtkCollector<br/>30 s"]
+    C2["HeadroomCollector<br/>5 s (mtime watch)"]
+    C3["QuotaCollector<br/>15 s"]
+  end
+  M["MetricsStore<br/>QObject + pyqtSignal(Snapshot)<br/>ring buffer 240 pts"]
+  subgraph UI["HUD frameless"]
+    W1["KPI tiles"]
+    W2["Donut répartition"]
+    W3["Gauges quota 5h / 7j"]
+    W4["Sparkline / aire"]
+  end
+  A1 --> C1 --> M
+  A2 --> C2 --> M
+  A4 --> C2
+  A3 --> C3 --> M
+  M -- "snapshotReady" --> W1
+  M --> W2
+  M --> W3
+  M --> W4
+  </div>
+</section>
+
+<!-- ============ SCENARIOS ============ -->
+<section>
+  <h2>3 · Trois scénarios de densité</h2>
+  <p class="sub" style="margin-bottom:18px">Mêmes données, trois surfaces. Les maquettes ci-dessous sont à l'échelle réelle en pixels : ce que vous voyez est la taille qu'aura le widget à l'écran.</p>
+
+  <!-- S1 -->
+  <div class="card" style="margin-bottom:22px">
+    <div class="flex" style="justify-content:space-between">
+      <div><h3 style="margin:0">Scénario A · <span style="color:var(--cy)">Ticker</span> - barre 720 × 44 px</h3>
+      <p class="sub" style="font-size:.85rem;margin:2px 0 0">Collée en haut d'écran, toujours visible, zéro obstruction. Clic = déplie le scénario C.</p></div>
+      <span class="badge b-dim">densité minimale</span>
+    </div>
+    <div class="stage" style="margin-top:16px">
+      <div class="hud s1">
+        <span class="neon" style="color:var(--cy);font-size:.8rem;letter-spacing:.18em">◉ TIAMAT</span>
+        <div class="vsep"></div>
+        <div class="cell"><span class="v neon" style="color:var(--gr)">62,5K</span><span class="l">tok saved</span></div>
+        <div class="cell"><span class="v" style="color:var(--gr)">15,62 $</span><span class="l">économisé</span></div>
+        <div class="vsep"></div>
+        <div class="cell" style="flex:1;min-width:120px">
+          <div class="flex" style="justify-content:space-between;gap:6px"><span class="l">quota 5 h</span><span class="l" style="color:var(--cy)">94 % libre</span></div>
+          <div class="bar" style="margin-top:3px"><i style="width:6%;background:var(--cy);box-shadow:0 0 10px var(--cy)"></i></div>
+        </div>
+        <div class="cell"><span class="v" style="color:var(--or)">4 h 08</span><span class="l">avant reset</span></div>
+        <div class="vsep"></div>
+        <div class="cell"><span class="v" style="color:var(--vi)">91,7 %</span><span class="l">rtk ratio</span></div>
+      </div>
+    </div>
+    <div class="grid g2" style="margin-top:16px">
+      <ul class="pm">
+        <li class="p"><b>+</b>Ne mange jamais l'espace de travail ; s'intègre comme une barre système.</li>
+        <li class="p"><b>+</b>Repeint quasi gratuit : pas de graphique, ~0,2 % CPU.</li>
+        <li class="p"><b>+</b>Lisible du coin de l'œil pendant que Claude travaille.</li>
+      </ul>
+      <ul class="pm">
+        <li class="m"><b>−</b>Aucune tendance : on voit l'état, jamais l'évolution.</li>
+        <li class="m"><b>−</b>Pas de répartition rtk vs headroom vs cache.</li>
+        <li class="m"><b>−</b>Sur écran 1080p vertical, 720 px reste large.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- S2 -->
+  <div class="card" style="margin-bottom:22px">
+    <div class="flex" style="justify-content:space-between">
+      <div><h3 style="margin:0">Scénario B · <span style="color:var(--vi)">Carte</span> - 360 × 300 px</h3>
+      <p class="sub" style="font-size:.85rem;margin:2px 0 0">Coin d'écran. Donut de répartition des économies + deux jauges quota + sparkline.</p></div>
+      <span class="badge b-vi">équilibre</span>
+    </div>
+    <div class="stage" style="margin-top:16px">
+      <div class="hud s2">
+        <div class="hud-grip"><i></i><i></i><i></i></div>
+        <div class="hdr"><span>◉ tiamat hud</span><span style="color:var(--gr)">● live 5 s</span></div>
+
+        <div class="kpis">
+          <div>
+            <div class="kpi-l">tokens économisés</div>
+            <div class="kpi-v neon" style="color:var(--gr)">62 537</div>
+            <div class="kpi-d">rtk 42,8K · hr 19,7K</div>
+          </div>
+          <div>
+            <div class="kpi-l">$ économisés</div>
+            <div class="kpi-v" style="color:var(--gr)">15,62 $</div>
+            <div class="kpi-d">dont cache 15,39 $</div>
+          </div>
+        </div>
+
+        <div class="sep"></div>
+
+        <div class="flex" style="gap:14px;margin-top:12px;flex-wrap:nowrap">
+          <!-- donut -->
+          <svg width="104" height="104" viewBox="0 0 42 42" style="flex:none">
+            <defs>
+              <filter id="gl2" x="-60%" y="-60%" width="220%" height="220%">
+                <feGaussianBlur stdDeviation="1.1" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <circle cx="21" cy="21" r="15.9" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="4.5"/>
+            <g filter="url(#gl2)" stroke-width="4.5" fill="none" stroke-linecap="butt" transform="rotate(-90 21 21)">
+              <!-- rtk 68,4% -->
+              <circle cx="21" cy="21" r="15.9" stroke="#22d3ee" stroke-dasharray="68.4 31.6" stroke-dashoffset="0"/>
+              <!-- output headroom 24,4% -->
+              <circle cx="21" cy="21" r="15.9" stroke="#a78bfa" stroke-dasharray="24.4 75.6" stroke-dashoffset="-68.4"/>
+              <!-- compression 7,2% -->
+              <circle cx="21" cy="21" r="15.9" stroke="#39ff88" stroke-dasharray="7.2 92.8" stroke-dashoffset="-92.8"/>
+            </g>
+            <text x="21" y="20.4" text-anchor="middle" font-family="var(--mono)" font-size="6.4" font-weight="600" fill="#e6edf6">62,5K</text>
+            <text x="21" y="25.6" text-anchor="middle" font-family="var(--mono)" font-size="3" fill="#8b98ad" letter-spacing=".3">TOKENS</text>
+          </svg>
+          <div class="legend" style="flex:1">
+            <div><i style="background:#22d3ee;box-shadow:0 0 8px #22d3ee"></i>rtk CLI <b style="color:var(--txt);float:right">42,8K</b></div>
+            <div><i style="background:#a78bfa;box-shadow:0 0 8px #a78bfa"></i>headroom out <b style="color:var(--txt);float:right">15,3K</b></div>
+            <div><i style="background:#39ff88;box-shadow:0 0 8px #39ff88"></i>compression <b style="color:var(--txt);float:right">4,5K</b></div>
+            <div style="margin-top:6px;color:var(--dim2)">cache lu : 5,13 M tok</div>
+          </div>
+        </div>
+
+        <div class="sep" style="margin:12px 0 10px"></div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div>
+            <div class="flex" style="justify-content:space-between"><span class="kpi-l">fenêtre 5 h</span><span class="kpi-l" style="color:var(--cy)">6 %</span></div>
+            <div class="bar" style="margin-top:4px"><i style="width:6%;background:var(--cy);box-shadow:0 0 10px var(--cy)"></i></div>
+            <div class="kpi-d" style="margin-top:3px">reset dans 4 h 08</div>
+          </div>
+          <div>
+            <div class="flex" style="justify-content:space-between"><span class="kpi-l">fenêtre 7 j</span><span class="kpi-l" style="color:var(--gr)">0 %</span></div>
+            <div class="bar" style="margin-top:4px"><i style="width:2%;background:var(--gr);box-shadow:0 0 10px var(--gr)"></i></div>
+            <div class="kpi-d" style="margin-top:3px">reset 12/08 23:00</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="grid g2" style="margin-top:16px">
+      <ul class="pm">
+        <li class="p"><b>+</b>Répond aux trois questions du brief en un coup d'œil : combien économisé, par quoi, combien il reste.</li>
+        <li class="p"><b>+</b>Le donut rend visible que <b>rtk pèse 68 %</b> des tokens sauvés - insight impossible en barre.</li>
+        <li class="p"><b>+</b>Empreinte 360 px : tient dans un coin sans gêner un IDE.</li>
+      </ul>
+      <ul class="pm">
+        <li class="m"><b>−</b>Pas d'historique : impossible de voir un pic de consommation.</li>
+        <li class="m"><b>−</b>Le donut à 3 segments plafonne vite en lisibilité si on ajoute des catégories.</li>
+        <li class="m"><b>−</b>Deux fois plus de repaint que le scénario A.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- S3 -->
+  <div class="card reco">
+    <div class="flex" style="justify-content:space-between">
+      <div><h3 style="margin:0">Scénario C · <span style="color:var(--gr)">Dashboard</span> - 560 × 380 px <span class="badge b-gr" style="margin-left:8px">recommandé</span></h3>
+      <p class="sub" style="font-size:.85rem;margin:2px 0 0">Le vrai « mini-Grafana » : KPI, donut, gauges radiales, aire temporelle, taux instantané.</p></div>
+    </div>
+    <div class="stage" style="margin-top:16px">
+      <div class="hud s3">
+        <div class="hud-grip"><i></i><i></i><i></i></div>
+        <div class="flex" style="justify-content:space-between;font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:var(--dim2)">
+          <span>◉ tiamat hud · claude-opus-5</span>
+          <span><span style="color:var(--gr)">●</span> 226 req · maj 5 s</span>
+        </div>
+
+        <!-- KPI row -->
+        <div class="row" style="margin-top:12px">
+          <div class="tile">
+            <div class="kpi-l">tokens sauvés</div>
+            <div class="kpi-v neon" style="color:var(--gr);font-size:1.32rem">62 537</div>
+            <div class="kpi-d">▲ +1,2K / h</div>
+          </div>
+          <div class="tile">
+            <div class="kpi-l">$ économisés</div>
+            <div class="kpi-v" style="color:var(--gr);font-size:1.32rem">15,62 $</div>
+            <div class="kpi-d">vs 17,51 $ dépensés</div>
+          </div>
+          <div class="tile">
+            <div class="kpi-l">efficacité rtk</div>
+            <div class="kpi-v" style="color:var(--cy);font-size:1.32rem">91,7 %</div>
+            <div class="kpi-d">38 commandes</div>
+          </div>
+        </div>
+
+        <!-- charts row -->
+        <div style="display:grid;grid-template-columns:150px 1fr;gap:12px;margin-top:10px">
+          <div class="tile" style="display:flex;flex-direction:column;align-items:center;gap:6px">
+            <div class="kpi-l" style="align-self:flex-start">répartition</div>
+            <svg width="112" height="112" viewBox="0 0 42 42">
+              <circle cx="21" cy="21" r="15.9" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="4"/>
+              <g filter="url(#gl2)" stroke-width="4" fill="none" transform="rotate(-90 21 21)">
+                <circle cx="21" cy="21" r="15.9" stroke="#22d3ee" stroke-dasharray="68.4 31.6"/>
+                <circle cx="21" cy="21" r="15.9" stroke="#a78bfa" stroke-dasharray="24.4 75.6" stroke-dashoffset="-68.4"/>
+                <circle cx="21" cy="21" r="15.9" stroke="#39ff88" stroke-dasharray="7.2 92.8" stroke-dashoffset="-92.8"/>
+              </g>
+              <text x="21" y="20.2" text-anchor="middle" font-size="6" font-weight="600" fill="#e6edf6" font-family="monospace">68%</text>
+              <text x="21" y="25" text-anchor="middle" font-size="2.8" fill="#8b98ad" font-family="monospace">RTK</text>
+            </svg>
+          </div>
+
+          <div class="tile">
+            <div class="flex" style="justify-content:space-between">
+              <span class="kpi-l">tokens sauvés / 60 min</span>
+              <span class="kpi-d mono" style="color:var(--cy)">pic 4,1K</span>
+            </div>
+            <svg viewBox="0 0 300 74" width="100%" height="74" preserveAspectRatio="none" style="margin-top:6px">
+              <defs>
+                <linearGradient id="ar" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#22d3ee" stop-opacity=".45"/>
+                  <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+                </linearGradient>
+                <filter id="gl" x="-20%" y="-60%" width="140%" height="240%">
+                  <feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+              </defs>
+              <g stroke="rgba(255,255,255,.06)" stroke-width="1">
+                <line x1="0" y1="18" x2="300" y2="18"/><line x1="0" y1="38" x2="300" y2="38"/><line x1="0" y1="58" x2="300" y2="58"/>
+              </g>
+              <path d="M0,66 L20,60 L40,63 L60,44 L80,50 L100,30 L120,38 L140,20 L160,34 L180,25 L200,46 L220,36 L240,14 L260,28 L280,22 L300,31 L300,74 L0,74 Z" fill="url(#ar)"/>
+              <path d="M0,66 L20,60 L40,63 L60,44 L80,50 L100,30 L120,38 L140,20 L160,34 L180,25 L200,46 L220,36 L240,14 L260,28 L280,22 L300,31"
+                    fill="none" stroke="#22d3ee" stroke-width="2" stroke-linejoin="round" filter="url(#gl)"/>
+              <circle cx="300" cy="31" r="3" fill="#22d3ee" filter="url(#gl)"/>
+            </svg>
+          </div>
+        </div>
+
+        <!-- gauges row -->
+        <div class="row" style="margin-top:10px">
+          <div class="tile" style="display:flex;align-items:center;gap:10px">
+            <svg width="54" height="54" viewBox="0 0 36 36" style="flex:none">
+              <path d="M18 3 a15 15 0 1 1 0 30 a15 15 0 1 1 0 -30" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.4"/>
+              <path d="M18 3 a15 15 0 1 1 0 30 a15 15 0 1 1 0 -30" fill="none" stroke="#22d3ee" stroke-width="3.4"
+                    stroke-dasharray="5.7 94.3" stroke-linecap="round" filter="url(#gl)"/>
+              <text x="18" y="19.6" text-anchor="middle" font-size="7.4" font-weight="600" fill="#e6edf6" font-family="monospace">6%</text>
+            </svg>
+            <div><div class="kpi-l">fenêtre 5 h</div><div class="kpi-d" style="color:var(--txt)">4 h 08 avant reset</div></div>
+          </div>
+          <div class="tile" style="display:flex;align-items:center;gap:10px">
+            <svg width="54" height="54" viewBox="0 0 36 36" style="flex:none">
+              <path d="M18 3 a15 15 0 1 1 0 30 a15 15 0 1 1 0 -30" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.4"/>
+              <path d="M18 3 a15 15 0 1 1 0 30 a15 15 0 1 1 0 -30" fill="none" stroke="#39ff88" stroke-width="3.4"
+                    stroke-dasharray="1 99" stroke-linecap="round" filter="url(#gl)"/>
+              <text x="18" y="19.6" text-anchor="middle" font-size="7.4" font-weight="600" fill="#e6edf6" font-family="monospace">0%</text>
+            </svg>
+            <div><div class="kpi-l">fenêtre 7 j</div><div class="kpi-d" style="color:var(--txt)">reset 12/08</div></div>
+          </div>
+          <div class="tile">
+            <div class="kpi-l">crédits extra</div>
+            <div class="kpi-v" style="font-size:1.05rem;color:var(--txt)">0 <span style="color:var(--dim2);font-size:.7rem">/ 40 $</span></div>
+            <div class="bar" style="margin-top:5px"><i style="width:1%;background:var(--or);box-shadow:0 0 8px var(--or)"></i></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="grid g2" style="margin-top:16px">
+      <ul class="pm">
+        <li class="p"><b>+</b>Seul scénario qui montre une <b>tendance</b> : un pic de consommation devient visible avant le mur de quota.</li>
+        <li class="p"><b>+</b>Couvre l'intégralité du brief (économies, répartition, tokens restants) sans interaction.</li>
+        <li class="p"><b>+</b>Se replie en scénario A d'un double-clic : une seule base de code, deux modes.</li>
+      </ul>
+      <ul class="pm">
+        <li class="m"><b>−</b>380 px de haut : intrusif sur un laptop 1080p, il faudra l'opacité réduite au survol inversé.</li>
+        <li class="m"><b>−</b>La série temporelle doit être persistée (ring buffer sur disque) sinon elle est vide à chaque lancement.</li>
+        <li class="m"><b>−</b>Plus de surface = plus de repaint ; il faut limiter le glow aux zones qui changent.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ COMPOSANTS ============ -->
+<section>
+  <h2>4 · Bibliothèque de gauges - ce qui marche, ce qui trahit</h2>
+  <p class="sub" style="margin-bottom:16px">Chaque forme est jugée sur son ergonomie réelle pour ces données précises, pas sur son esthétique.</p>
+  <div class="card">
+    <table>
+      <thead><tr><th>Forme</th><th>À utiliser pour</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td><b>Donut (camembert troué)</b></td><td>Répartition rtk / headroom-output / compression</td><td class="pro">Retenu · 3 segments max, total au centre. Au-delà de 4 parts, illisible à 100 px.</td></tr>
+        <tr><td><b>Anneau radial (gauge)</b></td><td>% quota 5 h et 7 j</td><td class="pro">Retenu · une valeur bornée 0-100, code couleur cyan → orange → rouge à 70 / 90 %.</td></tr>
+        <tr><td><b>Aire + sparkline</b></td><td>Tokens sauvés par minute, historique 60 min</td><td class="pro">Retenu · seule forme qui expose la tendance.</td></tr>
+        <tr><td><b>Barre de progression fine</b></td><td>Crédits extra 0/40 $, ratio de compression</td><td class="pro">Retenu · compact, jamais ambigu.</td></tr>
+        <tr><td><b>Camembert plein</b></td><td>-</td><td class="con">Écarté · sans trou central on perd la place du total, et la comparaison d'angles est moins précise qu'un donut légendé.</td></tr>
+        <tr><td><b>Jauge demi-lune type « compteur »</b></td><td>-</td><td class="con">Écarté · très à la mode néon mais gaspille 40 % de la boîte englobante pour une seule valeur.</td></tr>
+        <tr><td><b>Heatmap horaire</b></td><td>Consommation par heure sur 7 j</td><td style="color:var(--or)">Optionnel · superbe, mais exige un historique persistant que <code>savings_events.jsonl</code> ne couvre que partiellement.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============ TECHNIQUE ============ -->
+<section>
+  <h2>5 · Comment on rend ça en natif</h2>
+  <div class="grid g2">
+    <div class="card">
+      <h3 style="color:var(--cy)">Frameless + translucide</h3>
+      <pre>self.setWindowFlags(
+    Qt.WindowType.FramelessWindowHint
+    | Qt.WindowType.WindowStaysOnTopHint
+    | Qt.WindowType.Tool)          # pas d'icône barre des tâches
+self.setAttribute(
+    Qt.WidgetAttribute.WA_TranslucentBackground)
+# déplacement : mousePress mémorise l'offset,
+# mouseMove appelle self.move(event.globalPosition())</pre>
+      <p class="sub" style="font-size:.83rem;margin-top:10px">Sous Wayland, <code>WindowStaysOnTopHint</code> et le repositionnement global sont ignorés par certains compositeurs - fallback X11/XWayland ou couche <code>layer-shell</code> à vérifier au premier run.</p>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--vi)">Le néon, techniquement</h3>
+      <ul class="pm">
+        <li class="p"><b>+</b><code>QPainter</code> + <code>QPen</code> large et translucide sous le trait net = halo, sans coût GPU.</li>
+        <li class="p"><b>+</b><code>QGraphicsDropShadowEffect</code> (blur 18, offset 0, couleur d'accent) sur les labels KPI uniquement.</li>
+        <li class="p"><b>+</b><code>QConicalGradient</code> pour les arcs du donut, <code>QLinearGradient</code> pour l'aire.</li>
+        <li class="m"><b>−</b>Le drop-shadow sur un widget qui repeint à 1 Hz est OK ; sur une animation à 60 fps il double le coût - animer via <code>QVariantAnimation</code> sur les valeurs, pas sur l'effet.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="card" style="margin-top:18px">
+    <h3>Choix de stack</h3>
+    <table>
+      <thead><tr><th>Option</th><th>Pour</th><th>Contre</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><b>PyQt6 + QPainter maison</b></td><td>Contrôle total du look néon, zéro dépendance graphique, binaire léger</td><td>~250 lignes de peinture à écrire</td><td><span class="badge b-gr">retenu</span></td></tr>
+        <tr><td>PyQt6 + <code>QtCharts</code></td><td>Graphiques prêts</td><td>Style Qt difficile à « néoniser », licence GPL/commercial à surveiller</td><td><span class="badge b-dim">non</span></td></tr>
+        <tr><td>PyQt6 + <code>pyqtgraph</code></td><td>Séries temps réel performantes</td><td>Esthétique scientifique, lourd pour 4 courbes</td><td><span class="badge b-or">si heatmap</span></td></tr>
+        <tr><td>PySide6</td><td>Licence LGPL plus souple</td><td>API quasi identique - bascule triviale plus tard si besoin</td><td><span class="badge b-dim">alternative</span></td></tr>
+      </tbody>
+    </table>
+    <p class="sub" style="font-size:.83rem;margin-top:12px">Note d'environnement : <code>python3 -V</code> = <b>3.14.4</b> et <b>PyQt6 n'est pas installé</b> dans ce venv. Première étape d'implémentation : <code>pip install PyQt6</code> (roues cp314 à vérifier ; sinon PySide6 ou un venv 3.12).</p>
+  </div>
+</section>
+
+<div class="hr"></div>
+
+<!-- ============ INPUT ============ -->
+<section>
+  <h2>6 · Votre arbitrage</h2>
+  <p class="sub" style="margin-bottom:16px">Sélectionnez, puis envoyez - une seule réponse est renvoyée par question.</p>
+  <div class="grid g2">
+    <form class="q" data-lavish-question="scenario" onsubmit="event.preventDefault();
+      const f=new FormData(event.currentTarget); const c=f.get('scenario'); if(!c) return;
+      window.lavish.queuePrompt('Implémenter le widget PyQt6 avec le scénario ' + c,
+        {tag:'choice', text:'Scénario : ' + c, element:event.currentTarget, data:{question:'scenario', answer:c}});">
+      <h3 style="color:var(--vi)">Quel scénario construire ?</h3>
+      <div style="display:grid;gap:8px;margin:12px 0">
+        <label><input type="radio" name="scenario" value="A (Ticker 720×44)"><span><b>A · Ticker</b><br><span class="kpi-d">barre fine, état seul</span></span></label>
+        <label><input type="radio" name="scenario" value="B (Carte 360×300)"><span><b>B · Carte</b><br><span class="kpi-d">donut + gauges, coin d'écran</span></span></label>
+        <label><input type="radio" name="scenario" value="C (Dashboard 560×380)" checked><span><b>C · Dashboard</b> <span class="badge b-gr" style="font-size:.6rem">reco</span><br><span class="kpi-d">tout, avec tendance</span></span></label>
+        <label><input type="radio" name="scenario" value="C repliable en A (deux modes)"><span><b>C + A repliable</b><br><span class="kpi-d">double-clic pour basculer</span></span></label>
+      </div>
+      <button type="submit">Valider ce choix</button>
+    </form>
+
+    <form class="q" data-lavish-question="options" onsubmit="event.preventDefault();
+      const f=new FormData(event.currentTarget); const o=f.getAll('opt');
+      window.lavish.queuePrompt('Options du widget retenues : ' + (o.length?o.join(' ; '):'aucune'),
+        {tag:'choice', text:'Options : ' + (o.length?o.join(', '):'aucune'), element:event.currentTarget, data:{question:'options', answer:o}});">
+      <h3 style="color:var(--cy)">Options à embarquer</h3>
+      <div style="display:grid;gap:8px;margin:12px 0">
+        <label><input type="checkbox" name="opt" value="historique persistant sur disque" checked><span>Historique persistant (sparkline survit au redémarrage)</span></label>
+        <label><input type="checkbox" name="opt" value="alerte visuelle seuil quota 70/90%" checked><span>Alerte néon rouge aux seuils quota 70 % / 90 %</span></label>
+        <label><input type="checkbox" name="opt" value="icône systray + masquer/afficher"><span>Icône systray (masquer / afficher / quitter)</span></label>
+        <label><input type="checkbox" name="opt" value="heatmap horaire 7 jours"><span>Heatmap horaire 7 jours</span></label>
+        <label><input type="checkbox" name="opt" value="mode transparent au survol"><span>Transparence au survol (laisse cliquer dessous)</span></label>
+        <label><input type="checkbox" name="opt" value="par-projet via rtk gain --project"><span>Vue par projet (<code>rtk gain --project</code>)</span></label>
+      </div>
+      <button type="submit">Valider ces options</button>
+    </form>
+  </div>
+</section>
+
+</main>
+
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: false, theme: "dark", securityLevel: "strict",
+    themeVariables:{ primaryColor:"#151b26", primaryTextColor:"#e6edf6", primaryBorderColor:"#22d3ee",
+      lineColor:"#5d6979", secondaryColor:"#1b2230", tertiaryColor:"#111721", fontFamily:"JetBrains Mono, monospace" } });
+  const nodes = [...document.querySelectorAll(".mermaid")];
+  if (document.readyState === "complete") mermaid.run({ nodes });
+  else window.addEventListener("load", () => mermaid.run({ nodes }), { once: true });
+</script>
+</body>
+</html>
