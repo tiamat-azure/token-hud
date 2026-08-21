@@ -12,7 +12,7 @@ Keep this section intact and keep all entries concise.
 ## Orientation
 
 PyQt6 desktop widget showing how many tokens and dollars `rtk` and `headroom` saved.
-~1.7 kLOC across 8 modules in `token_hud/`. Every module has a docstring stating its
+~1.9 kLOC across 8 modules in `token_hud/`. Every module has a docstring stating its
 role - read those before reading bodies.
 
 Data flows one way:
@@ -46,7 +46,7 @@ interpreters have no PyQt6.
   (10 min). Do not add network calls to the fast timers. `read_commits` falls back to
   a local `git log` scan when the API is unavailable.
 - **Colors and fonts come from `theme.py`.** No literal `QColor` in `gauges.py` or
-  `hud.py`.
+  `hud.py`, apart from the few neutral white-alpha track/grid tints already there.
 - **Gauges are hand-painted**, no stylesheets and no Qt Charts. New visuals subclass
   `_Panel` and implement `paintEvent`.
 
@@ -62,6 +62,9 @@ function rather than inside a `paintEvent`.
 `TOKEN_HUD_GIT_ROOTS` (colon-separated) and `TOKEN_HUD_GIT_DEPTH` tune the git fallback
 scan; see `collectors.git_scan_roots`. Window mode and position persist through
 `QSettings("token-hud", "hud")`; the metric history lands in `store.history_path()`.
+
+Under Wayland the HUD cannot stay on top, so `__main__._prefer_x11` forces `QT_QPA_PLATFORM=xcb`
+unless the user set it. Do not remove that shim.
 
 ## Not to touch
 
