@@ -1,7 +1,9 @@
 UV ?= uv
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev sync run test lint format check build clean distclean
+.PHONY: help install dev sync start stop test lint format check build clean distclean
+
+PID_FILE := .token-hud.pid
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -13,8 +15,22 @@ install: ## Create the environment with runtime dependencies only
 dev sync: ## Create the environment with dev dependencies
 	$(UV) sync
 
-run: ## Launch the HUD
-	$(UV) run python -m token_hud
+start: ## Launch the HUD in the background
+	@if [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
+		echo "token-hud already running (pid $$(cat $(PID_FILE)))"; \
+	else \
+		nohup $(UV) run python -m token_hud > /tmp/token-hud.log 2>&1 & \
+		echo $$! > $(PID_FILE); \
+		echo "token-hud started (pid $$!)"; \
+	fi
+
+stop: ## Stop the background HUD process
+	@if [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
+		kill $$(cat $(PID_FILE)) && echo "token-hud stopped"; \
+	else \
+		echo "token-hud not running"; \
+	fi; \
+	rm -f $(PID_FILE)
 
 test: ## Run the test suite
 	$(UV) run pytest -q

@@ -19,7 +19,7 @@ Managed with [uv](https://docs.astral.sh/uv/), driven through a Makefile.
 
 ```sh
 make dev    # create .venv, install runtime + dev dependencies
-make run    # launch the HUD
+make start  # launch the HUD in background
 make check  # ruff + pytest, no display needed
 ```
 
@@ -66,7 +66,7 @@ under-reports by construction, so the panel labels itself `local`. That fallback
 walks the filesystem, so where it walks is configurable:
 
 ```sh
-TOKEN_HUD_GIT_ROOTS="$HOME/code:/srv/repos" TOKEN_HUD_GIT_DEPTH=2 make run
+TOKEN_HUD_GIT_ROOTS="$HOME/code:/srv/repos" TOKEN_HUD_GIT_DEPTH=2 make start
 ```
 
 It defaults to `~/workspaces`, `~/src` and `~/projects`, three levels deep, and
