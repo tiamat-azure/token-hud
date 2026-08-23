@@ -15,9 +15,10 @@ install: ## Create the environment with runtime dependencies only
 dev sync: ## Create the environment with dev dependencies
 	$(UV) sync
 
-start: ## Launch the HUD in the background
+start: ## Launch the HUD in the background, or unhide it if already running
 	@if [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
-		echo "token-hud already running (pid $$(cat $(PID_FILE)))"; \
+		kill -USR1 $$(cat $(PID_FILE)); \
+		echo "token-hud already running (pid $$(cat $(PID_FILE))), unhidden"; \
 	else \
 		nohup $(UV) run python -m token_hud > /tmp/token-hud.log 2>&1 & \
 		echo $$! > $(PID_FILE); \

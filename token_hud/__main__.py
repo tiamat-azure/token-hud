@@ -23,6 +23,12 @@ def _prefer_x11() -> None:
         os.environ["QT_QPA_PLATFORM"] = "xcb"
 
 
+def _show(window: HudWindow) -> None:
+    window.setVisible(True)
+    window.raise_()
+    window.activateWindow()
+
+
 def main() -> int:
     _prefer_x11()
     app = QApplication(sys.argv)
@@ -41,6 +47,9 @@ def main() -> int:
 
     # Let Ctrl+C through: Python signal handlers only run between Qt events.
     signal.signal(signal.SIGINT, lambda *_: app.quit())
+    # `make start` sends SIGUSR1 to an already-running HUD to unhide it instead of
+    # spawning a second instance.
+    signal.signal(signal.SIGUSR1, lambda *_: _show(window))
     heartbeat = QTimer()
     heartbeat.start(300)
     heartbeat.timeout.connect(lambda: None)
