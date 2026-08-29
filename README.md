@@ -21,6 +21,8 @@ Managed with [uv](https://docs.astral.sh/uv/), driven through a Makefile.
 make dev    # create .venv, install runtime + dev dependencies
 make start  # launch the HUD in background
 make check  # ruff + pytest, no display needed
+make shots  # grab ticker + dashboard PNGs from the real HUD (offscreen)
+make gif    # shots, then stitch images/demo.gif
 ```
 
 `make help` lists every target. Without make: `uv sync` then

@@ -1,0 +1,35 @@
+name: check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install Qt, fonts, and ImageMagick
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libglib2.0-0 libdbus-1-3 libfontconfig1 \
+            libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 \
+            libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+            libxcb-shape0 libxcb-xinerama0 libxcb-xfixes0 \
+            fonts-jetbrains-mono fonts-dejavu-core imagemagick xvfb
+
+      - name: Sync
+        run: uv sync
+
+      - name: Lint and unit tests
+        run: make check
+
+      - name: Fail if screenshots or GIF are stale
+        run: |
+          make gif
+          git add -- images/ticker.png images/dashboard.png images/demo.gif
+          git diff --cached --exit-code -- images/ticker.png images/dashboard.png images/demo.gif
