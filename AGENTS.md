@@ -38,10 +38,12 @@ display; in a headless session it fails at `QApplication`, which is expected and
 to fix.
 
 `make shots` grabs `images/ticker.png` and `images/dashboard.png` from the real
-`HudWindow` (`QT_QPA_PLATFORM=offscreen`). `make gif` depends on `shots`, then stitches
-`images/demo.gif`. Never edit those images by hand. CI runs `make gif` then
-`make verify-shots` (dimensions + average-hash vs HEAD). Do not `git diff` PNG bytes:
-Qt/freetype rasterization is not identical across ubuntu-24.04 VMs.
+`HudWindow` (`QT_QPA_PLATFORM=offscreen`) using the vendored JetBrains Mono in
+`tools/fonts/` (hinting off). `make gif` depends on `shots` and stitches
+`images/demo.gif` with the locked Pillow extra — no ImageMagick post-process.
+Never edit those images by hand. CI runs `make gif` then `make verify-shots`
+(dimensions + average-hash vs HEAD). Do not `git diff` PNG bytes: Qt/freetype
+still drifts slightly across hosts even with a pinned TTF.
 
 ## Constraints that are easy to break
 

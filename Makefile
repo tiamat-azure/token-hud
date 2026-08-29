@@ -61,14 +61,7 @@ shots: ## Capture ticker + dashboard PNGs from the real HUD (offscreen)
 		$(UV) run python tools/capture_shots.py
 
 gif: shots ## Rebuild images/demo.gif from freshly captured screenshots
-	$(UV) run --with pillow python tools/make_demo_gif.py
-	@if command -v magick >/dev/null 2>&1; then \
-		magick images/demo.gif -layers OptimizeFrame images/demo.opt.gif && mv images/demo.opt.gif images/demo.gif; \
-	elif command -v convert >/dev/null 2>&1; then \
-		convert images/demo.gif -layers OptimizeFrame images/demo.opt.gif && mv images/demo.opt.gif images/demo.gif; \
-	else \
-		echo "imagemagick not found; leaving pillow gif as-is"; \
-	fi
+	$(UV) run python tools/make_demo_gif.py
 
 verify-shots: ## Host-stable shot check (sizes + layout hash, not PNG bytes)
 	$(UV) run python tools/verify_shots.py

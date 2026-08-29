@@ -14,6 +14,13 @@ from datetime import date, timedelta
 from pathlib import Path
 
 # Isolate QSettings / history before Qt reads XDG paths.
+ROOT = Path(__file__).resolve().parents[1]
+_FONT_DIR = ROOT / "tools" / "fonts"
+_FONT_FILES = (
+    "JetBrainsMono-Regular.ttf",
+    "JetBrainsMono-Medium.ttf",
+    "JetBrainsMono-SemiBold.ttf",
+)
 _xdg = Path(tempfile.mkdtemp(prefix="token-hud-shots-"))
 os.environ.setdefault("XDG_CONFIG_HOME", str(_xdg / "config"))
 os.environ.setdefault("XDG_DATA_HOME", str(_xdg / "data"))
@@ -24,20 +31,38 @@ os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
 os.environ.setdefault("QT_FONT_DPI", "96")
 os.environ.setdefault("QT_SCALE_FACTOR", "1")
 
-_font_dir = Path("/usr/share/fonts/truetype/jetbrains-mono")
-if _font_dir.is_dir():
-    _fc = _xdg / "fonts.conf"
-    _fc.write_text(
-        """<?xml version="1.0"?>
+_missing = [name for name in _FONT_FILES if not (_FONT_DIR / name).is_file()]
+if _missing:
+    raise SystemExit(f"vendored JetBrains Mono missing in {_FONT_DIR}: {', '.join(_missing)}")
+_fc = _xdg / "fonts.conf"
+# FONTCONFIG_FILE replaces the host config. Include /etc/fonts/fonts.conf for
+# Fc aliases, then bind JetBrains Mono to the vendored TTFs and pin raster
+# options so agent-host and ubuntu-24.04 CI hint the same way.
+_fc.write_text(
+    f"""<?xml version="1.0"?>
 <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
 <fontconfig>
-  <dir>/usr/share/fonts/truetype/jetbrains-mono</dir>
-  <dir>/usr/share/fonts/truetype/dejavu</dir>
+  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>
+  <dir>{_FONT_DIR}</dir>
+  <selectfont>
+    <rejectfont>
+      <glob>/usr/share/fonts/truetype/macos/*</glob>
+      <glob>/usr/share/fonts/truetype/jetbrains-mono/*</glob>
+    </rejectfont>
+  </selectfont>
+  <match target="font">
+    <edit name="antialias" mode="assign"><bool>true</bool></edit>
+    <edit name="hinting" mode="assign"><bool>false</bool></edit>
+    <edit name="hintstyle" mode="assign"><const>hintnone</const></edit>
+    <edit name="rgba" mode="assign"><const>none</const></edit>
+    <edit name="lcdfilter" mode="assign"><const>lcdnone</const></edit>
+    <edit name="autohint" mode="assign"><bool>false</bool></edit>
+  </match>
 </fontconfig>
 """,
-        encoding="utf-8",
-    )
-    os.environ["FONTCONFIG_FILE"] = str(_fc)
+    encoding="utf-8",
+)
+os.environ["FONTCONFIG_FILE"] = str(_fc)
 
 from PyQt6.QtCore import QEventLoop, QObject, QTimer, pyqtSignal  # noqa: E402
 from PyQt6.QtGui import QPixmap  # noqa: E402
@@ -53,7 +78,6 @@ from token_hud.model import (  # noqa: E402
     Snapshot,
 )
 
-ROOT = Path(__file__).resolve().parents[1]
 IMAGES = ROOT / "images"
 GAUGE_SETTLE_MS = 650
 
