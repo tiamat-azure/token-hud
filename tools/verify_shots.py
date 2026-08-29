@@ -1,11 +1,10 @@
-"""Host-stable checks for promo shots: sizes and layout, not PNG bytes.
+"""Host-stable checks for promo shots: sizes and layout, not PNG/GIF bytes.
 
 Qt/freetype rasterization (and libpng filters) drift across VMs even on the same
-Ubuntu release, so `git diff` on `images/*.png` is not a useful stale check.
+Ubuntu release, so `git diff` on `images/` is not a useful stale check.
 This script still requires a real capture: it reads the files `make shots` /
 `make gif` just wrote, asserts contracted dimensions, and compares a coarse
-average-hash of the working-tree PNGs to `HEAD` so a forgotten 720 px ticker or
-a missing cell fails while antialiasing noise does not.
+average-hash of the working-tree PNGs and GIF frame 0 to `HEAD`.
 
 No QApplication. Pillow only.
 """
@@ -20,7 +19,6 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-IMAGES = ROOT / "images"
 
 # Keep in sync with token_hud.hud and tools/make_demo_gif.py - imported lazily
 # in main() so `png_size` stays usable from tests without pulling Qt.
@@ -61,8 +59,8 @@ def hamming(left: int, right: int) -> int:
     return (left ^ right).bit_count()
 
 
-def unique_colors(path: Path) -> int:
-    colors = Image.open(path).convert("RGBA").getcolors(maxcolors=200_000)
+def unique_colors(image: Image.Image) -> int:
+    colors = image.convert("RGBA").getcolors(maxcolors=200_000)
     return 0 if colors is None else len(colors)
 
 
@@ -77,16 +75,21 @@ def _git_show(relpath: str) -> bytes:
     return result.stdout
 
 
-def _check_png(relpath: str, expected: tuple[int, int]) -> None:
+def _frame0(image: Image.Image) -> Image.Image:
+    image.seek(0)
+    return image.convert("RGBA")
+
+
+def _check_layout(relpath: str, expected: tuple[int, int], size_of) -> None:
     path = ROOT / relpath
-    size = png_size(path)
+    size = size_of(path)
     if size != expected:
         raise SystemExit(f"{relpath} is {size[0]}x{size[1]}, expected {expected[0]}x{expected[1]}")
-    colors = unique_colors(path)
+    regenerated = _frame0(Image.open(path))
+    colors = unique_colors(regenerated)
     if colors < MIN_UNIQUE_COLORS:
         raise SystemExit(f"{relpath} looks blank or fake ({colors} unique colors)")
-    committed = Image.open(BytesIO(_git_show(relpath)))
-    regenerated = Image.open(path)
+    committed = _frame0(Image.open(BytesIO(_git_show(relpath))))
     if committed.size != regenerated.size:
         raise SystemExit(
             f"{relpath} size {regenerated.size} does not match committed {committed.size} - commit a fresh make gif"
@@ -103,13 +106,9 @@ def _check_png(relpath: str, expected: tuple[int, int]) -> None:
 def main() -> int:
     from token_hud.hud import DASHBOARD_SIZE, TICKER_SIZE
 
-    _check_png("images/ticker.png", TICKER_SIZE)
-    _check_png("images/dashboard.png", DASHBOARD_SIZE)
-    gif = IMAGES / "demo.gif"
-    size = gif_size(gif)
-    if size != GIF_SIZE:
-        raise SystemExit(f"images/demo.gif is {size[0]}x{size[1]}, expected {GIF_SIZE[0]}x{GIF_SIZE[1]}")
-    print(f"images/demo.gif {size[0]}x{size[1]}")
+    _check_layout("images/ticker.png", TICKER_SIZE, png_size)
+    _check_layout("images/dashboard.png", DASHBOARD_SIZE, png_size)
+    _check_layout("images/demo.gif", GIF_SIZE, gif_size)
     return 0
 
 

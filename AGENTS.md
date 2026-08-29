@@ -39,11 +39,11 @@ to fix.
 
 `make shots` grabs `images/ticker.png` and `images/dashboard.png` from the real
 `HudWindow` (`QT_QPA_PLATFORM=offscreen`) using the vendored JetBrains Mono in
-`tools/fonts/` (hinting off). `make gif` depends on `shots` and stitches
-`images/demo.gif` with the locked Pillow extra — no ImageMagick post-process.
+`tools/fonts/` (dir-only FONTCONFIG_FILE, hinting off, `QFontDatabase.addApplicationFont`).
+`make gif` depends on `shots` and stitches `images/demo.gif` with the locked Pillow extra.
 Never edit those images by hand. CI runs `make gif` then `make verify-shots`
-(dimensions + average-hash vs HEAD). Do not `git diff` PNG bytes: Qt/freetype
-still drifts slightly across hosts even with a pinned TTF.
+(dimensions + average-hash vs HEAD, including GIF frame 0). Do not `git diff` PNG bytes:
+Qt/freetype still drifts slightly across hosts even with a pinned TTF.
 
 ## Constraints that are easy to break
 

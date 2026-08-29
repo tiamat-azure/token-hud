@@ -35,21 +35,15 @@ _missing = [name for name in _FONT_FILES if not (_FONT_DIR / name).is_file()]
 if _missing:
     raise SystemExit(f"vendored JetBrains Mono missing in {_FONT_DIR}: {', '.join(_missing)}")
 _fc = _xdg / "fonts.conf"
-# FONTCONFIG_FILE replaces the host config. Include /etc/fonts/fonts.conf for
-# Fc aliases, then bind JetBrains Mono to the vendored TTFs and pin raster
-# options so agent-host and ubuntu-24.04 CI hint the same way.
+# FONTCONFIG_FILE replaces the host config. Dir-only (vendored TTFs) plus
+# raster pins — do not include /etc/fonts/fonts.conf, which would let a host
+# JetBrains/Fira face win. Qt also addApplicationFont()s these files after
+# QApplication so theme.mono() cannot miss them.
 _fc.write_text(
     f"""<?xml version="1.0"?>
 <!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
 <fontconfig>
-  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>
   <dir>{_FONT_DIR}</dir>
-  <selectfont>
-    <rejectfont>
-      <glob>/usr/share/fonts/truetype/macos/*</glob>
-      <glob>/usr/share/fonts/truetype/jetbrains-mono/*</glob>
-    </rejectfont>
-  </selectfont>
   <match target="font">
     <edit name="antialias" mode="assign"><bool>true</bool></edit>
     <edit name="hinting" mode="assign"><bool>false</bool></edit>
@@ -65,7 +59,7 @@ _fc.write_text(
 os.environ["FONTCONFIG_FILE"] = str(_fc)
 
 from PyQt6.QtCore import QEventLoop, QObject, QTimer, pyqtSignal  # noqa: E402
-from PyQt6.QtGui import QPixmap  # noqa: E402
+from PyQt6.QtGui import QFontDatabase, QPixmap  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 from token_hud.hud import DASHBOARD_SIZE, TICKER_SIZE, HudWindow  # noqa: E402
@@ -80,6 +74,13 @@ from token_hud.model import (  # noqa: E402
 
 IMAGES = ROOT / "images"
 GAUGE_SETTLE_MS = 650
+
+
+def _register_fonts() -> None:
+    for name in _FONT_FILES:
+        font_id = QFontDatabase.addApplicationFont(str(_FONT_DIR / name))
+        if font_id == -1:
+            raise SystemExit(f"QFontDatabase.addApplicationFont failed for {_FONT_DIR / name}")
 
 
 class _ShotStore(QObject):
@@ -194,6 +195,7 @@ def main() -> int:
     app.setApplicationName("token-hud-shots")
     app.setOrganizationName("token-hud-shots")
     app.setQuitOnLastWindowClosed(False)
+    _register_fonts()
 
     snap = _snapshot()
     store = _ShotStore(snap, _series(), rate=2_400.0)
