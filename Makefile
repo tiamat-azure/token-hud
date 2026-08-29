@@ -1,7 +1,7 @@
 UV ?= uv
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev sync start stop test lint format check build clean distclean shots gif
+.PHONY: help install dev sync start stop test lint format check build clean distclean shots gif verify-shots
 
 PID_FILE := .token-hud.pid
 
@@ -69,3 +69,6 @@ gif: shots ## Rebuild images/demo.gif from freshly captured screenshots
 	else \
 		echo "imagemagick not found; leaving pillow gif as-is"; \
 	fi
+
+verify-shots: ## Host-stable shot check (sizes + layout hash, not PNG bytes)
+	$(UV) run python tools/verify_shots.py

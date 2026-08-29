@@ -28,8 +28,17 @@ jobs:
       - name: Lint and unit tests
         run: make check
 
-      - name: Fail if screenshots or GIF are stale
+      - name: Capture HUD shots (must succeed) and check they stay current
         run: |
           make gif
-          git add -- images/ticker.png images/dashboard.png images/demo.gif
-          git diff --cached --exit-code -- images/ticker.png images/dashboard.png images/demo.gif
+          make verify-shots
+
+      - name: Upload regenerated shots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hud-shots
+          path: |
+            images/ticker.png
+            images/dashboard.png
+            images/demo.gif

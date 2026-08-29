@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import struct
 import sys
 from pathlib import Path
 
@@ -19,7 +20,7 @@ from token_hud.gauges import (  # noqa: E402
     fmt_tokens,
     fmt_usd,
 )
-from token_hud.hud import TICKER_SIZE, ticker_cells  # noqa: E402
+from token_hud.hud import DASHBOARD_SIZE, TICKER_SIZE, ticker_cells  # noqa: E402
 from token_hud.model import HeadroomMetrics, QuotaMetrics, QuotaWindow, RtkMetrics, Snapshot  # noqa: E402
 
 
@@ -48,6 +49,41 @@ def test_quota_window_reports_free_percentage():
 def test_ticker_size_is_806_by_44():
     assert TICKER_SIZE == (806, 44)
     assert TICKER_SIZE[1] == 44
+
+
+def _png_size(path: Path) -> tuple[int, int]:
+    data = path.read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    return struct.unpack(">II", data[16:24])
+
+
+def _gif_size(path: Path) -> tuple[int, int]:
+    data = path.read_bytes()
+    assert data[:6] in (b"GIF87a", b"GIF89a")
+    return struct.unpack("<HH", data[6:10])
+
+
+def test_committed_shot_files_match_hud_sizes():
+    """Promo PNGs must match the live window; no QApplication, just file headers."""
+    root = Path(__file__).resolve().parents[1]
+    assert _png_size(root / "images/ticker.png") == TICKER_SIZE
+    assert _png_size(root / "images/dashboard.png") == DASHBOARD_SIZE
+    assert _gif_size(root / "images/demo.gif") == (880, 520)
+
+
+def test_average_hash_tolerates_blur_but_not_a_different_view():
+    tools = Path(__file__).resolve().parents[1] / "tools"
+    if str(tools) not in sys.path:
+        sys.path.insert(0, str(tools))
+    import verify_shots as vs  # noqa: E402
+    from PIL import Image, ImageFilter
+
+    root = Path(__file__).resolve().parents[1]
+    ticker = Image.open(root / "images/ticker.png")
+    dashboard = Image.open(root / "images/dashboard.png")
+    blurred = ticker.filter(ImageFilter.BoxBlur(1))
+    assert vs.hamming(vs.average_hash(ticker), vs.average_hash(blurred)) <= vs.MAX_HAMMING
+    assert vs.hamming(vs.average_hash(ticker), vs.average_hash(dashboard)) > vs.MAX_HAMMING
 
 
 def test_ticker_cells_place_seven_day_quota_left_of_rtk_ratio():

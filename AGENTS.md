@@ -39,7 +39,9 @@ to fix.
 
 `make shots` grabs `images/ticker.png` and `images/dashboard.png` from the real
 `HudWindow` (`QT_QPA_PLATFORM=offscreen`). `make gif` depends on `shots`, then stitches
-`images/demo.gif`. Never edit those images by hand.
+`images/demo.gif`. Never edit those images by hand. CI runs `make gif` then
+`make verify-shots` (dimensions + average-hash vs HEAD). Do not `git diff` PNG bytes:
+Qt/freetype rasterization is not identical across ubuntu-24.04 VMs.
 
 ## Constraints that are easy to break
 
