@@ -19,7 +19,8 @@ from token_hud.gauges import (  # noqa: E402
     fmt_tokens,
     fmt_usd,
 )
-from token_hud.model import HeadroomMetrics, QuotaWindow, RtkMetrics, Snapshot  # noqa: E402
+from token_hud.hud import TICKER_SIZE, ticker_cells  # noqa: E402
+from token_hud.model import HeadroomMetrics, QuotaMetrics, QuotaWindow, RtkMetrics, Snapshot  # noqa: E402
 
 
 def test_snapshot_totals_sum_every_saving_source():
@@ -42,6 +43,30 @@ def test_snapshot_totals_sum_every_saving_source():
 def test_quota_window_reports_free_percentage():
     assert QuotaWindow(utilization_pct=17.0).free_pct == 83.0
     assert QuotaWindow(utilization_pct=140.0).free_pct == 0.0
+
+
+def test_ticker_size_is_806_by_44():
+    assert TICKER_SIZE == (806, 44)
+    assert TICKER_SIZE[1] == 44
+
+
+def test_ticker_cells_place_seven_day_quota_left_of_rtk_ratio():
+    seven = QuotaWindow(utilization_pct=42.0)
+    snap = Snapshot(
+        rtk=RtkMetrics(savings_pct=91.7, ok=True),
+        quota=QuotaMetrics(
+            five_hour=QuotaWindow(utilization_pct=17.0),
+            seven_day=seven,
+        ),
+    )
+    cells = ticker_cells(snap)
+    labels = [label for _value, label, _color, _glow in cells]
+    assert labels.index("quota 7 j") == labels.index("rtk ratio") - 1
+    value, label, color, glow = next(cell for cell in cells if cell[1] == "quota 7 j")
+    assert value == f"{seven.free_pct:.0f} % libre"
+    assert label == "quota 7 j"
+    assert color == theme.quota_color(seven.utilization_pct)
+    assert glow is False
 
 
 @pytest.mark.parametrize(

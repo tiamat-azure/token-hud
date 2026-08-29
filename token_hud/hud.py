@@ -45,7 +45,7 @@ from .model import Snapshot
 from .store import HISTORY_INTERVAL_S, MetricsStore
 
 DASHBOARD_SIZE = (560, 380)
-TICKER_SIZE = (720, 44)
+TICKER_SIZE = (806, 44)
 DEFAULT_MODE = "ticker"
 
 _PALETTE = {"cyan": theme.CYAN, "violet": theme.VIOLET, "green": theme.GREEN}
@@ -53,6 +53,20 @@ _PALETTE = {"cyan": theme.CYAN, "violet": theme.VIOLET, "green": theme.GREEN}
 
 def _peak_of(deltas: list[float]) -> str:
     return f"pic {fmt_tokens(max(deltas))}" if deltas else ""
+
+
+def ticker_cells(snap: Snapshot) -> list[tuple[str, str, QColor, bool]]:
+    """Widget-free ticker readouts so tests can assert order without a QApplication."""
+    five = snap.quota.five_hour
+    seven = snap.quota.seven_day
+    return [
+        (fmt_tokens(snap.tokens_saved), "tok saved", theme.GREEN, True),
+        (fmt_usd(snap.usd_saved), "économisé", theme.GREEN, False),
+        (f"{five.free_pct:.0f} % libre", "quota 5 h", theme.quota_color(five.utilization_pct), False),
+        (fmt_duration(five.seconds_to_reset), "avant reset", theme.ORANGE, False),
+        (f"{seven.free_pct:.0f} % libre", "quota 7 j", theme.quota_color(seven.utilization_pct), False),
+        (f"{snap.rtk.savings_pct:.1f} %".replace(".", ","), "rtk ratio", theme.VIOLET, False),
+    ]
 
 
 class _Header(QWidget):
@@ -183,7 +197,7 @@ class DashboardView(QWidget):
 
 
 class TickerView(QWidget):
-    """Collapsed 720x44 bar: the five original readouts, then the commit strip.
+    """Collapsed 806x44 bar: six readouts (including 7-day quota), then the commit strip.
 
     The strip is suffixed rather than substituted - the existing indicators keep
     their slots, they only get narrower.
@@ -205,15 +219,8 @@ class TickerView(QWidget):
 
     def apply(self, snap: Snapshot, *_ignored) -> None:
         self.strip.set_commits(snap.commits)
-        five = snap.quota.five_hour
-        self._quota_pct = five.utilization_pct
-        self._cells = [
-            (fmt_tokens(snap.tokens_saved), "tok saved", theme.GREEN, True),
-            (fmt_usd(snap.usd_saved), "économisé", theme.GREEN, False),
-            (f"{five.free_pct:.0f} % libre", "quota 5 h", theme.quota_color(five.utilization_pct), False),
-            (fmt_duration(five.seconds_to_reset), "avant reset", theme.ORANGE, False),
-            (f"{snap.rtk.savings_pct:.1f} %".replace(".", ","), "rtk ratio", theme.VIOLET, False),
-        ]
+        self._quota_pct = snap.quota.five_hour.utilization_pct
+        self._cells = ticker_cells(snap)
         self.update()
 
     def paintEvent(self, _event) -> None:
