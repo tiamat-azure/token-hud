@@ -20,7 +20,14 @@ from token_hud.gauges import (  # noqa: E402
     fmt_tokens,
     fmt_usd,
 )
-from token_hud.hud import DASHBOARD_SIZE, TICKER_SIZE, ticker_cells  # noqa: E402
+from token_hud.hud import (  # noqa: E402
+    DASHBOARD_SIZE,
+    TICKER_SIZE,
+    quota_7j_cell_index,
+    ticker_cell_box,
+    ticker_cells,
+    ticker_cells_width,
+)
 from token_hud.model import HeadroomMetrics, QuotaMetrics, QuotaWindow, RtkMetrics, Snapshot  # noqa: E402
 
 
@@ -84,6 +91,49 @@ def test_average_hash_tolerates_blur_but_not_a_different_view():
     blurred = ticker.filter(ImageFilter.BoxBlur(1))
     assert vs.hamming(vs.average_hash(ticker), vs.average_hash(blurred)) <= vs.MAX_HAMMING
     assert vs.hamming(vs.average_hash(ticker), vs.average_hash(dashboard)) > vs.MAX_HAMMING
+
+
+def _stretch_five_cells_into_six(ticker):
+    """Replay the review's false-green: five readouts stretched across the six-cell band."""
+    from PIL import Image as PilImage
+
+    band_x = ticker_cell_box(ticker.size[0], ticker.size[1], 0, 6)[0]
+    band_w = int(ticker_cells_width(ticker.size[0]))
+    band = ticker.crop((band_x, 0, band_x + band_w, ticker.size[1]))
+    five = band.crop((0, 0, int(round(band_w * 5 / 6)), ticker.size[1]))
+    stretched = ticker.copy()
+    stretched.paste(five.resize((band_w, ticker.size[1]), PilImage.Resampling.BILINEAR), (band_x, 0))
+    return stretched
+
+
+def test_quota_7j_cell_box_is_index_4_at_806x44():
+    labels = [label for _v, label, _c, _g in ticker_cells(Snapshot())]
+    index = quota_7j_cell_index()
+    assert index == 4
+    assert labels[index] == "quota 7 j"
+    assert labels[index + 1] == "rtk ratio"
+    assert ticker_cell_box(*TICKER_SIZE, index, len(labels)) == (456, 0, 86, 44)
+
+
+def test_quota_7j_cell_hash_fails_if_the_weekly_slot_is_stretched_away():
+    tools = Path(__file__).resolve().parents[1] / "tools"
+    if str(tools) not in sys.path:
+        sys.path.insert(0, str(tools))
+    import verify_shots as vs  # noqa: E402
+    from PIL import Image, ImageFilter
+
+    root = Path(__file__).resolve().parents[1]
+    ticker = Image.open(root / "images/ticker.png").convert("RGBA")
+    cell = vs.crop_ticker_quota_7j(ticker)
+    blurred = cell.filter(ImageFilter.BoxBlur(1))
+    assert vs.hamming(vs.average_hash(cell), vs.average_hash(blurred)) <= vs.MAX_CELL_HAMMING
+
+    stretched = _stretch_five_cells_into_six(ticker)
+    # Size check would still pass (806×44); global aHash stays under 72.
+    assert stretched.size == TICKER_SIZE
+    assert vs.hamming(vs.average_hash(ticker), vs.average_hash(stretched)) < vs.MAX_HAMMING
+    bad = vs.crop_ticker_quota_7j(stretched)
+    assert vs.hamming(vs.average_hash(cell), vs.average_hash(bad)) > vs.MAX_CELL_HAMMING
 
 
 def test_ticker_cells_place_seven_day_quota_left_of_rtk_ratio():

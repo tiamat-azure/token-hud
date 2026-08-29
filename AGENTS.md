@@ -42,8 +42,9 @@ to fix.
 `tools/fonts/` (dir-only FONTCONFIG_FILE, hinting off, `QFontDatabase.addApplicationFont`).
 `make gif` depends on `shots` and stitches `images/demo.gif` with the locked Pillow extra.
 Never edit those images by hand. CI runs `make gif` then `make verify-shots`
-(dimensions + average-hash vs HEAD, including GIF frame 0). Do not `git diff` PNG bytes:
-Qt/freetype still drifts slightly across hosts even with a pinned TTF.
+(dimensions, GIF frame-0 hash vs HEAD, and a `quota 7 j` cell-box hash on the
+ticker — not a global Hamming tight enough to flake on freetype). Do not `git diff`
+PNG bytes.
 
 ## Constraints that are easy to break
 

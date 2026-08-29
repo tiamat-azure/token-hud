@@ -24,9 +24,13 @@ ROOT = Path(__file__).resolve().parents[1]
 # in main() so `png_size` stays usable from tests without pulling Qt.
 GIF_SIZE = (880, 520)
 HASH_SIZE = 16
-# 16x16 = 256 bits. Freetype/Qt hinting across VMs flips a slice of edge bits;
-# a missing ticker cell or a 720-wide bar blows past this.
+# Dashboard/GIF only. The ticker is gated by the quota-7j cell crop: a missing
+# weekly cell scored global Δ≈13–62, under any Hamming that still survives
+# freetype drift.
 MAX_HAMMING = 72
+# 16x16 of the 86×44 `quota 7 j` box. Blur is Δ≈2; five cells stretched into
+# six or rtk painted in that slot is Δ≈50–70.
+MAX_CELL_HAMMING = 32
 MIN_UNIQUE_COLORS = 24
 
 
@@ -80,7 +84,39 @@ def _frame0(image: Image.Image) -> Image.Image:
     return image.convert("RGBA")
 
 
-def _check_layout(relpath: str, expected: tuple[int, int], size_of) -> None:
+def ticker_quota_7j_box(window_width: int, window_height: int) -> tuple[int, int, int, int]:
+    from token_hud.hud import quota_7j_cell_index, ticker_cell_box, ticker_cells
+    from token_hud.model import Snapshot
+
+    n_cells = len(ticker_cells(Snapshot()))
+    return ticker_cell_box(window_width, window_height, quota_7j_cell_index(), n_cells)
+
+
+def crop_ticker_quota_7j(image: Image.Image) -> Image.Image:
+    x, y, w, h = ticker_quota_7j_box(*image.size)
+    return image.crop((x, y, x + w, y + h))
+
+
+def _check_quota_7j_cell(committed: Image.Image, regenerated: Image.Image) -> None:
+    expected = crop_ticker_quota_7j(committed)
+    actual = crop_ticker_quota_7j(regenerated)
+    box = ticker_quota_7j_box(*regenerated.size)
+    colors = unique_colors(actual)
+    if colors < MIN_UNIQUE_COLORS:
+        raise SystemExit(f"quota 7 j cell {box} looks blank ({colors} unique colors)")
+    distance = hamming(average_hash(expected), average_hash(actual))
+    print(
+        f"images/ticker.png quota 7 j cell {box[0]},{box[1]} {box[2]}x{box[3]} "
+        f"colors={colors} aHashΔ={distance} (max {MAX_CELL_HAMMING})"
+    )
+    if distance > MAX_CELL_HAMMING:
+        raise SystemExit(
+            f"quota 7 j cell drifted from HEAD (average-hash hamming {distance} > {MAX_CELL_HAMMING}). "
+            "The weekly-quota readout is missing or the five other cells were stretched into its slot."
+        )
+
+
+def _check_layout(relpath: str, expected: tuple[int, int], size_of, *, cell_gate: bool = False) -> None:
     path = ROOT / relpath
     size = size_of(path)
     if size != expected:
@@ -96,6 +132,9 @@ def _check_layout(relpath: str, expected: tuple[int, int], size_of) -> None:
         )
     distance = hamming(average_hash(committed), average_hash(regenerated))
     print(f"{relpath} {size[0]}x{size[1]} colors={colors} aHashΔ={distance} (max {MAX_HAMMING})")
+    if cell_gate:
+        _check_quota_7j_cell(committed, regenerated)
+        return
     if distance > MAX_HAMMING:
         raise SystemExit(
             f"{relpath} layout drifted from HEAD (average-hash hamming {distance} > {MAX_HAMMING}). "
@@ -106,7 +145,7 @@ def _check_layout(relpath: str, expected: tuple[int, int], size_of) -> None:
 def main() -> int:
     from token_hud.hud import DASHBOARD_SIZE, TICKER_SIZE
 
-    _check_layout("images/ticker.png", TICKER_SIZE, png_size)
+    _check_layout("images/ticker.png", TICKER_SIZE, png_size, cell_gate=True)
     _check_layout("images/dashboard.png", DASHBOARD_SIZE, png_size)
     _check_layout("images/demo.gif", GIF_SIZE, gif_size)
     return 0
