@@ -46,19 +46,21 @@ from .store import HISTORY_INTERVAL_S, MetricsStore
 
 DASHBOARD_SIZE = (560, 380)
 DEFAULT_MODE = "ticker"
-TICKER_STRIP_W = 150
 TICKER_CELLS_X = 112.0
 TICKER_CELLS_LEFT = 130
 TICKER_CELLS_STRIP_GAP = 10
 # Rule is drawn this many px to the left of the next cell. Value/label rects stop here
 # so a long readout like « 100 % libre » cannot paint on the separator.
 TICKER_SEPARATOR_INSET = 10
-# JetBrains Mono 9pt DemiBold at 96dpi: « 100 % libre » advances 79.1px. Inner width
-# is cell_w - inset, so 96px cells leave ~7px of air before the rule.
-TICKER_MIN_CELL_W = 96.0
+# Per-cell widths LTR (tok, $ , 5h, reset, 7j, rtk). Quota slots stay 96 so
+# « 100 % libre » (79.1 metrics / 78 ink) keeps ≥6 px before the rule. Slack
+# from tok / économisé / reset / rtk is given to CommitStrip; window stays 866.
+TICKER_CELL_WIDTHS = (72, 78, 96, 76, 96, 72)
 TICKER_CELL_COUNT = 6
+TICKER_MIN_CELL_W = float(min(TICKER_CELL_WIDTHS))
+TICKER_STRIP_W = 236
 TICKER_SIZE = (
-    int(TICKER_CELLS_LEFT + TICKER_MIN_CELL_W * TICKER_CELL_COUNT + TICKER_STRIP_W + TICKER_CELLS_STRIP_GAP),
+    int(TICKER_CELLS_LEFT + sum(TICKER_CELL_WIDTHS) + TICKER_STRIP_W + TICKER_CELLS_STRIP_GAP),
     44,
 )
 
@@ -87,19 +89,34 @@ def ticker_cells_width(window_width: int, strip_w: int = TICKER_STRIP_W) -> floa
     return window_width - TICKER_CELLS_LEFT - strip_w - TICKER_CELLS_STRIP_GAP
 
 
+def ticker_cell_widths(window_width: int, n_cells: int, strip_w: int = TICKER_STRIP_W) -> tuple[float, ...]:
+    """LTR slot widths. Locked map when the ticker has six readouts; equal fallback otherwise."""
+    if n_cells == len(TICKER_CELL_WIDTHS):
+        return tuple(float(width) for width in TICKER_CELL_WIDTHS)
+    equal = max(TICKER_MIN_CELL_W, ticker_cells_width(window_width, strip_w) / max(1, n_cells))
+    return tuple(equal for _ in range(n_cells))
+
+
 def ticker_cell_width(window_width: int, n_cells: int, strip_w: int = TICKER_STRIP_W) -> float:
-    return max(TICKER_MIN_CELL_W, ticker_cells_width(window_width, strip_w) / max(1, n_cells))
+    """Mean slot width. Prefer `ticker_cell_widths` — cells are no longer equal."""
+    widths = ticker_cell_widths(window_width, n_cells, strip_w)
+    return sum(widths) / max(1, len(widths))
+
+
+def ticker_cell_origin(index: int, window_width: int, n_cells: int, strip_w: int = TICKER_STRIP_W) -> float:
+    return TICKER_CELLS_X + sum(ticker_cell_widths(window_width, n_cells, strip_w)[:index])
 
 
 def ticker_separator_x(window_width: int, index: int, n_cells: int, strip_w: int = TICKER_STRIP_W) -> int:
     """X of the vertical rule to the left of cell `index` (`index >= 1`). Matches paintEvent."""
-    cell_w = ticker_cell_width(window_width, n_cells, strip_w)
-    return int(TICKER_CELLS_X + index * cell_w - TICKER_SEPARATOR_INSET)
+    return int(ticker_cell_origin(index, window_width, n_cells, strip_w) - TICKER_SEPARATOR_INSET)
 
 
-def ticker_value_inner_width(window_width: int, n_cells: int, strip_w: int = TICKER_STRIP_W) -> float:
-    """Width of the value/label rect: full cell minus the separator gap."""
-    return ticker_cell_width(window_width, n_cells, strip_w) - TICKER_SEPARATOR_INSET
+def ticker_value_inner_width(
+    window_width: int, n_cells: int, index: int = 0, *, strip_w: int = TICKER_STRIP_W
+) -> float:
+    """Width of the value/label rect for slot `index`: cell minus the separator gap."""
+    return ticker_cell_widths(window_width, n_cells, strip_w)[index] - TICKER_SEPARATOR_INSET
 
 
 def ticker_mono_advance_px(text: str, *, pt: int = 9, spacing: float = 0.0) -> float:
@@ -115,8 +132,9 @@ def ticker_cell_box(
     window_width: int, window_height: int, index: int, n_cells: int, strip_w: int = TICKER_STRIP_W
 ) -> tuple[int, int, int, int]:
     """Pixel box `(x, y, w, h)` of a ticker readout. Matches `TickerView.paintEvent`."""
-    cell_w = ticker_cell_width(window_width, n_cells, strip_w)
-    left = TICKER_CELLS_X + index * cell_w
+    widths = ticker_cell_widths(window_width, n_cells, strip_w)
+    left = TICKER_CELLS_X + sum(widths[:index])
+    cell_w = widths[index]
     x0 = int(left)
     x1 = int(left + cell_w)
     return (x0, 0, x1 - x0, window_height)
@@ -266,9 +284,9 @@ class DashboardView(QWidget):
 class TickerView(QWidget):
     """Collapsed ticker bar: six readouts (including 7-day quota), then the commit strip.
 
-    The strip is suffixed rather than substituted - the existing indicators keep
-    their slots, they only get narrower. Height is locked at 44px; width follows
-    `TICKER_SIZE` so « 100 % libre » fits left of the next separator.
+    Slots are not equal: quota cells keep 96px so « 100 % libre » stays off the
+    rule; tok / $ / reset / rtk donate unused inner margin to CommitStrip.
+    Height is locked at 44px; width stays `TICKER_SIZE`.
     """
 
     STRIP_W = TICKER_STRIP_W
@@ -303,9 +321,10 @@ class TickerView(QWidget):
         x = TICKER_CELLS_X
         cells_w = ticker_cells_width(self.width(), self.STRIP_W)
         n_cells = len(self._cells)
-        cell_w = ticker_cell_width(self.width(), n_cells, self.STRIP_W)
-        inner_w = ticker_value_inner_width(self.width(), n_cells, self.STRIP_W)
+        widths = ticker_cell_widths(self.width(), n_cells, self.STRIP_W)
         for index, (value, label, color, glow) in enumerate(self._cells):
+            cell_w = widths[index]
+            inner_w = cell_w - TICKER_SEPARATOR_INSET
             if index:
                 sep_x = ticker_separator_x(self.width(), index, n_cells, self.STRIP_W)
                 painter.setPen(QPen(theme.LINE, 1))
