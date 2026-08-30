@@ -1,7 +1,7 @@
 UV ?= uv
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev sync start stop test lint format check build clean distclean shots gif verify-shots
+.PHONY: help install dev sync start stop toggle test lint format check build clean distclean shots gif verify-shots
 
 PID_FILE := .token-hud.pid
 
@@ -32,6 +32,14 @@ stop: ## Stop the background HUD process
 		echo "token-hud not running"; \
 	fi; \
 	rm -f $(PID_FILE)
+
+toggle: ## Hide or show a running HUD without starting or stopping it
+	@if [ -f $(PID_FILE) ] && kill -0 $$(cat $(PID_FILE)) 2>/dev/null; then \
+		kill -USR2 $$(cat $(PID_FILE)); \
+		echo "token-hud toggled (pid $$(cat $(PID_FILE)))"; \
+	else \
+		echo "token-hud not running"; \
+	fi
 
 test: ## Run the test suite
 	$(UV) run pytest -q

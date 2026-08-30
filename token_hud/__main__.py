@@ -29,6 +29,14 @@ def _show(window: HudWindow) -> None:
     window.activateWindow()
 
 
+def _toggle(window: HudWindow) -> None:
+    """Hide a visible HUD, or unhide a hidden one. The process stays alive."""
+    if window.isVisible():
+        window.setVisible(False)
+    else:
+        _show(window)
+
+
 def main() -> int:
     _prefer_x11()
     app = QApplication(sys.argv)
@@ -48,8 +56,9 @@ def main() -> int:
     # Let Ctrl+C through: Python signal handlers only run between Qt events.
     signal.signal(signal.SIGINT, lambda *_: app.quit())
     # `make start` sends SIGUSR1 to an already-running HUD to unhide it instead of
-    # spawning a second instance.
+    # spawning a second instance. `make toggle` sends SIGUSR2 to hide or unhide.
     signal.signal(signal.SIGUSR1, lambda *_: _show(window))
+    signal.signal(signal.SIGUSR2, lambda *_: _toggle(window))
     heartbeat = QTimer()
     heartbeat.start(300)
     heartbeat.timeout.connect(lambda: None)
