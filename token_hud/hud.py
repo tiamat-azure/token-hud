@@ -45,14 +45,61 @@ from .model import Snapshot
 from .store import HISTORY_INTERVAL_S, MetricsStore
 
 DASHBOARD_SIZE = (560, 380)
-TICKER_SIZE = (720, 44)
+TICKER_SIZE = (806, 44)
 DEFAULT_MODE = "ticker"
+TICKER_STRIP_W = 150
+TICKER_CELLS_X = 112.0
+TICKER_CELLS_LEFT = 130
+TICKER_CELLS_STRIP_GAP = 10
+TICKER_MIN_CELL_W = 78.0
 
 _PALETTE = {"cyan": theme.CYAN, "violet": theme.VIOLET, "green": theme.GREEN}
 
 
 def _peak_of(deltas: list[float]) -> str:
     return f"pic {fmt_tokens(max(deltas))}" if deltas else ""
+
+
+def ticker_cells(snap: Snapshot) -> list[tuple[str, str, QColor, bool]]:
+    """Widget-free ticker readouts so tests can assert order without a QApplication."""
+    five = snap.quota.five_hour
+    seven = snap.quota.seven_day
+    return [
+        (fmt_tokens(snap.tokens_saved), "tok saved", theme.GREEN, True),
+        (fmt_usd(snap.usd_saved), "économisé", theme.GREEN, False),
+        (f"{five.free_pct:.0f} % libre", "quota 5 h", theme.quota_color(five.utilization_pct), False),
+        (fmt_duration(five.seconds_to_reset), "avant reset", theme.ORANGE, False),
+        (f"{seven.free_pct:.0f} % libre", "quota 7 j", theme.quota_color(seven.utilization_pct), False),
+        (f"{snap.rtk.savings_pct:.1f} %".replace(".", ","), "rtk ratio", theme.VIOLET, False),
+    ]
+
+
+def ticker_cells_width(window_width: int, strip_w: int = TICKER_STRIP_W) -> float:
+    return window_width - TICKER_CELLS_LEFT - strip_w - TICKER_CELLS_STRIP_GAP
+
+
+def ticker_cell_width(window_width: int, n_cells: int, strip_w: int = TICKER_STRIP_W) -> float:
+    return max(TICKER_MIN_CELL_W, ticker_cells_width(window_width, strip_w) / max(1, n_cells))
+
+
+def ticker_cell_box(
+    window_width: int, window_height: int, index: int, n_cells: int, strip_w: int = TICKER_STRIP_W
+) -> tuple[int, int, int, int]:
+    """Pixel box `(x, y, w, h)` of a ticker readout. Matches `TickerView.paintEvent`."""
+    cell_w = ticker_cell_width(window_width, n_cells, strip_w)
+    left = TICKER_CELLS_X + index * cell_w
+    x0 = int(left)
+    x1 = int(left + cell_w)
+    return (x0, 0, x1 - x0, window_height)
+
+
+def quota_7j_cell_index(snap: Snapshot | None = None) -> int:
+    """Index of `quota 7 j`, which must sit immediately left of `rtk ratio`."""
+    labels = [label for _value, label, _color, _glow in ticker_cells(snap or Snapshot())]
+    index = labels.index("quota 7 j")
+    if labels[index + 1] != "rtk ratio":
+        raise ValueError("quota 7 j is not immediately left of rtk ratio")
+    return index
 
 
 class _Header(QWidget):
@@ -183,13 +230,13 @@ class DashboardView(QWidget):
 
 
 class TickerView(QWidget):
-    """Collapsed 720x44 bar: the five original readouts, then the commit strip.
+    """Collapsed 806x44 bar: six readouts (including 7-day quota), then the commit strip.
 
     The strip is suffixed rather than substituted - the existing indicators keep
     their slots, they only get narrower.
     """
 
-    STRIP_W = 150
+    STRIP_W = TICKER_STRIP_W
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -205,15 +252,8 @@ class TickerView(QWidget):
 
     def apply(self, snap: Snapshot, *_ignored) -> None:
         self.strip.set_commits(snap.commits)
-        five = snap.quota.five_hour
-        self._quota_pct = five.utilization_pct
-        self._cells = [
-            (fmt_tokens(snap.tokens_saved), "tok saved", theme.GREEN, True),
-            (fmt_usd(snap.usd_saved), "économisé", theme.GREEN, False),
-            (f"{five.free_pct:.0f} % libre", "quota 5 h", theme.quota_color(five.utilization_pct), False),
-            (fmt_duration(five.seconds_to_reset), "avant reset", theme.ORANGE, False),
-            (f"{snap.rtk.savings_pct:.1f} %".replace(".", ","), "rtk ratio", theme.VIOLET, False),
-        ]
+        self._quota_pct = snap.quota.five_hour.utilization_pct
+        self._cells = ticker_cells(snap)
         self.update()
 
     def paintEvent(self, _event) -> None:
@@ -223,9 +263,9 @@ class TickerView(QWidget):
             painter, QRectF(14, 0, 90, self.height()), "◉ TOKEN HUD", theme.CYAN,
             theme.mono(8, QFont.Weight.DemiBold, spacing=18), glow=True,
         )
-        x = 112.0
-        cells_w = self.width() - 130 - self.STRIP_W - 10
-        cell_w = max(78.0, cells_w / max(1, len(self._cells)))
+        x = TICKER_CELLS_X
+        cells_w = ticker_cells_width(self.width(), self.STRIP_W)
+        cell_w = ticker_cell_width(self.width(), len(self._cells), self.STRIP_W)
         for index, (value, label, color, glow) in enumerate(self._cells):
             if index:
                 painter.setPen(QPen(theme.LINE, 1))
@@ -243,7 +283,7 @@ class TickerView(QWidget):
         painter.setPen(QPen(theme.LINE, 1))
         painter.drawLine(separator_x, 10, separator_x, self.height() - 10)
 
-        bar = QRectF(112, self.height() - 5, cells_w, 2.5)
+        bar = QRectF(TICKER_CELLS_X, self.height() - 5, cells_w, 2.5)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(255, 255, 255, 16))
         painter.drawRoundedRect(bar, 1.5, 1.5)

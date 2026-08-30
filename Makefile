@@ -1,7 +1,7 @@
 UV ?= uv
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev sync start stop test lint format check build clean distclean
+.PHONY: help install dev sync start stop test lint format check build clean distclean shots gif verify-shots
 
 PID_FILE := .token-hud.pid
 
@@ -55,8 +55,13 @@ clean: ## Remove build and test artefacts
 distclean: clean ## Also remove the virtual environment
 	rm -rf .venv
 
-.PHONY: gif
-gif: ## Rebuild images/demo.gif from the screenshots
-	$(UV) run --with pillow python tools/make_demo_gif.py
-	magick images/demo.gif -layers OptimizeFrame images/demo.opt.gif
-	mv images/demo.opt.gif images/demo.gif
+shots: ## Capture ticker + dashboard PNGs from the real HUD (offscreen)
+	QT_QPA_PLATFORM=offscreen QT_ENABLE_HIGHDPI_SCALING=0 QT_AUTO_SCREEN_SCALE_FACTOR=0 \
+		QT_FONT_DPI=96 QT_SCALE_FACTOR=1 \
+		$(UV) run python tools/capture_shots.py
+
+gif: shots ## Rebuild images/demo.gif from freshly captured screenshots
+	$(UV) run python tools/make_demo_gif.py
+
+verify-shots: ## Host-stable shot check (sizes + layout hash, not PNG bytes)
+	$(UV) run python tools/verify_shots.py

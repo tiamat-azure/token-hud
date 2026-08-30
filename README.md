@@ -7,7 +7,7 @@ questions at a glance: how many tokens `rtk` and `headroom` saved you, what that
 is worth in dollars, and how much of your usage window is left before the reset.
 
 Frameless, always on top, draggable, no taskbar entry. Two modes, one code base:
-a full **dashboard** (560x380) and a collapsed **ticker** bar (720x44) that lives
+a full **dashboard** (560x380) and a collapsed **ticker** bar (806x44) that lives
 quietly along an edge of the screen. Double-click switches between them, as in
 the animation above.
 
@@ -21,6 +21,8 @@ Managed with [uv](https://docs.astral.sh/uv/), driven through a Makefile.
 make dev    # create .venv, install runtime + dev dependencies
 make start  # launch the HUD in background
 make check  # ruff + pytest, no display needed
+make shots  # grab ticker + dashboard PNGs from the real HUD (offscreen)
+make gif    # shots, then stitch images/demo.gif
 ```
 
 `make help` lists every target. Without make: `uv sync` then

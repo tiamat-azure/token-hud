@@ -1,0 +1,43 @@
+name: check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libglib2.0-0 libdbus-1-3 libfontconfig1 \
+            libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 \
+            libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+            libxcb-shape0 libxcb-xinerama0 libxcb-xfixes0 xvfb
+
+      - name: Sync
+        run: uv sync
+
+      - name: Lint and unit tests
+        run: make check
+
+      - name: Capture HUD shots (must succeed) and check they stay current
+        run: |
+          make gif
+          make verify-shots
+
+      - name: Upload regenerated shots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hud-shots
+          path: |
+            images/ticker.png
+            images/dashboard.png
+            images/demo.gif

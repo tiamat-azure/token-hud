@@ -17,7 +17,7 @@ build-backend = "hatchling.build"
 packages = ["token_hud"]
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.9"]
+dev = ["pytest>=8", "ruff>=0.9", "pillow>=11"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

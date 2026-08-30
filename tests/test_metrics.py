@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import struct
 import sys
 from pathlib import Path
 
@@ -19,7 +20,15 @@ from token_hud.gauges import (  # noqa: E402
     fmt_tokens,
     fmt_usd,
 )
-from token_hud.model import HeadroomMetrics, QuotaWindow, RtkMetrics, Snapshot  # noqa: E402
+from token_hud.hud import (  # noqa: E402
+    DASHBOARD_SIZE,
+    TICKER_SIZE,
+    quota_7j_cell_index,
+    ticker_cell_box,
+    ticker_cells,
+    ticker_cells_width,
+)
+from token_hud.model import HeadroomMetrics, QuotaMetrics, QuotaWindow, RtkMetrics, Snapshot  # noqa: E402
 
 
 def test_snapshot_totals_sum_every_saving_source():
@@ -42,6 +51,108 @@ def test_snapshot_totals_sum_every_saving_source():
 def test_quota_window_reports_free_percentage():
     assert QuotaWindow(utilization_pct=17.0).free_pct == 83.0
     assert QuotaWindow(utilization_pct=140.0).free_pct == 0.0
+
+
+def test_ticker_size_is_806_by_44():
+    assert TICKER_SIZE == (806, 44)
+    assert TICKER_SIZE[1] == 44
+
+
+def _png_size(path: Path) -> tuple[int, int]:
+    data = path.read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    return struct.unpack(">II", data[16:24])
+
+
+def _gif_size(path: Path) -> tuple[int, int]:
+    data = path.read_bytes()
+    assert data[:6] in (b"GIF87a", b"GIF89a")
+    return struct.unpack("<HH", data[6:10])
+
+
+def test_committed_shot_files_match_hud_sizes():
+    """Promo PNGs must match the live window; no QApplication, just file headers."""
+    root = Path(__file__).resolve().parents[1]
+    assert _png_size(root / "images/ticker.png") == TICKER_SIZE
+    assert _png_size(root / "images/dashboard.png") == DASHBOARD_SIZE
+    assert _gif_size(root / "images/demo.gif") == (880, 520)
+
+
+def test_average_hash_tolerates_blur_but_not_a_different_view():
+    tools = Path(__file__).resolve().parents[1] / "tools"
+    if str(tools) not in sys.path:
+        sys.path.insert(0, str(tools))
+    import verify_shots as vs  # noqa: E402
+    from PIL import Image, ImageFilter
+
+    root = Path(__file__).resolve().parents[1]
+    ticker = Image.open(root / "images/ticker.png")
+    dashboard = Image.open(root / "images/dashboard.png")
+    blurred = ticker.filter(ImageFilter.BoxBlur(1))
+    assert vs.hamming(vs.average_hash(ticker), vs.average_hash(blurred)) <= vs.MAX_HAMMING
+    assert vs.hamming(vs.average_hash(ticker), vs.average_hash(dashboard)) > vs.MAX_HAMMING
+
+
+def _stretch_five_cells_into_six(ticker):
+    """Replay the review's false-green: five readouts stretched across the six-cell band."""
+    from PIL import Image as PilImage
+
+    band_x = ticker_cell_box(ticker.size[0], ticker.size[1], 0, 6)[0]
+    band_w = int(ticker_cells_width(ticker.size[0]))
+    band = ticker.crop((band_x, 0, band_x + band_w, ticker.size[1]))
+    five = band.crop((0, 0, int(round(band_w * 5 / 6)), ticker.size[1]))
+    stretched = ticker.copy()
+    stretched.paste(five.resize((band_w, ticker.size[1]), PilImage.Resampling.BILINEAR), (band_x, 0))
+    return stretched
+
+
+def test_quota_7j_cell_box_is_index_4_at_806x44():
+    labels = [label for _v, label, _c, _g in ticker_cells(Snapshot())]
+    index = quota_7j_cell_index()
+    assert index == 4
+    assert labels[index] == "quota 7 j"
+    assert labels[index + 1] == "rtk ratio"
+    assert ticker_cell_box(*TICKER_SIZE, index, len(labels)) == (456, 0, 86, 44)
+
+
+def test_quota_7j_cell_hash_fails_if_the_weekly_slot_is_stretched_away():
+    tools = Path(__file__).resolve().parents[1] / "tools"
+    if str(tools) not in sys.path:
+        sys.path.insert(0, str(tools))
+    import verify_shots as vs  # noqa: E402
+    from PIL import Image, ImageFilter
+
+    root = Path(__file__).resolve().parents[1]
+    ticker = Image.open(root / "images/ticker.png").convert("RGBA")
+    cell = vs.crop_ticker_quota_7j(ticker)
+    blurred = cell.filter(ImageFilter.BoxBlur(1))
+    assert vs.hamming(vs.average_hash(cell), vs.average_hash(blurred)) <= vs.MAX_CELL_HAMMING
+
+    stretched = _stretch_five_cells_into_six(ticker)
+    # Size check would still pass (806×44); global aHash stays under 72.
+    assert stretched.size == TICKER_SIZE
+    assert vs.hamming(vs.average_hash(ticker), vs.average_hash(stretched)) < vs.MAX_HAMMING
+    bad = vs.crop_ticker_quota_7j(stretched)
+    assert vs.hamming(vs.average_hash(cell), vs.average_hash(bad)) > vs.MAX_CELL_HAMMING
+
+
+def test_ticker_cells_place_seven_day_quota_left_of_rtk_ratio():
+    seven = QuotaWindow(utilization_pct=42.0)
+    snap = Snapshot(
+        rtk=RtkMetrics(savings_pct=91.7, ok=True),
+        quota=QuotaMetrics(
+            five_hour=QuotaWindow(utilization_pct=17.0),
+            seven_day=seven,
+        ),
+    )
+    cells = ticker_cells(snap)
+    labels = [label for _value, label, _color, _glow in cells]
+    assert labels.index("quota 7 j") == labels.index("rtk ratio") - 1
+    value, label, color, glow = next(cell for cell in cells if cell[1] == "quota 7 j")
+    assert value == f"{seven.free_pct:.0f} % libre"
+    assert label == "quota 7 j"
+    assert color == theme.quota_color(seven.utilization_pct)
+    assert glow is False
 
 
 @pytest.mark.parametrize(

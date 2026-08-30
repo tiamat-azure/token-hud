@@ -37,6 +37,15 @@ interpreters have no PyQt6.
 display; in a headless session it fails at `QApplication`, which is expected and not a bug
 to fix.
 
+`make shots` grabs `images/ticker.png` and `images/dashboard.png` from the real
+`HudWindow` (`QT_QPA_PLATFORM=offscreen`) using the vendored JetBrains Mono in
+`tools/fonts/` (dir-only FONTCONFIG_FILE, hinting off, `QFontDatabase.addApplicationFont`).
+`make gif` depends on `shots` and stitches `images/demo.gif` with the locked Pillow extra.
+Never edit those images by hand. CI runs `make gif` then `make verify-shots`
+(dimensions, GIF frame-0 hash vs HEAD, and a `quota 7 j` cell-box hash on the
+ticker — not a global Hamming tight enough to flake on freetype). Do not `git diff`
+PNG bytes.
+
 ## Constraints that are easy to break
 
 - **No I/O in the UI thread.** Every read goes through `collectors.job()` onto the
@@ -73,6 +82,6 @@ Under Wayland the HUD cannot stay on top, so `__main__._prefer_x11` forces
 
 ## Not to touch
 
-`images/demo.gif` and the screenshots are generated - rebuild with `make gif`, never by
-hand. `uv.lock` is likewise generated - change dependencies in `pyproject.toml` and let
-`uv sync` rewrite it.
+`images/demo.gif` and the screenshots are generated - rebuild with `make gif` (which
+runs `make shots` first), never by hand. `uv.lock` is likewise generated - change
+dependencies in `pyproject.toml` and let `uv sync` rewrite it.
