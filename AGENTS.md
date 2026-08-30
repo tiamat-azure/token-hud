@@ -35,7 +35,7 @@ interpreters have no PyQt6.
 `make start` opens a real window in the background (PID in `.token-hud.pid`, logs in
 `/tmp/token-hud.log`) and returns control immediately; `make stop` kills it. It needs a
 display; in a headless session it fails at `QApplication`, which is expected and not a bug
-to fix.
+to fix. `make toggle` hides or shows a running HUD without stopping the process.
 
 `make shots` grabs `images/ticker.png` and `images/dashboard.png` from the real
 `HudWindow` (`QT_QPA_PLATFORM=offscreen`) using the vendored JetBrains Mono in

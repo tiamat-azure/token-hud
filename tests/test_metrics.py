@@ -13,6 +13,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from token_hud import collectors, theme  # noqa: E402
+from token_hud.__main__ import _show, _toggle  # noqa: E402
 from token_hud.gauges import (  # noqa: E402
     fmt_commit_day,
     fmt_contributions,
@@ -407,3 +408,50 @@ def test_github_reader_maps_calendar_onto_the_rolling_window(monkeypatch):
     assert len(metrics.days) == collectors.COMMIT_DAYS
     assert metrics.days[-1] == (today.isoformat(), 2)
     assert metrics.total == 6  # the 400-day-old day falls outside the window
+
+
+class _FakeHud:
+    """Duck-typed stand-in for HudWindow visibility; no QApplication."""
+
+    def __init__(self, *, visible: bool) -> None:
+        self._visible = visible
+        self.raised = False
+        self.activated = False
+
+    def isVisible(self) -> bool:
+        return self._visible
+
+    def setVisible(self, visible: bool) -> None:
+        self._visible = visible
+
+    def raise_(self) -> None:
+        self.raised = True
+
+    def activateWindow(self) -> None:
+        self.activated = True
+
+
+def test_show_unhides_without_hiding():
+    window = _FakeHud(visible=False)
+    _show(window)
+    assert window.isVisible() is True
+    assert window.raised is True
+    assert window.activated is True
+    _show(window)
+    assert window.isVisible() is True
+
+
+def test_toggle_hides_a_visible_window():
+    window = _FakeHud(visible=True)
+    _toggle(window)
+    assert window.isVisible() is False
+    assert window.raised is False
+    assert window.activated is False
+
+
+def test_toggle_shows_a_hidden_window():
+    window = _FakeHud(visible=False)
+    _toggle(window)
+    assert window.isVisible() is True
+    assert window.raised is True
+    assert window.activated is True
