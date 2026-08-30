@@ -26,12 +26,16 @@ GIF_SIZE = (880, 520)
 HASH_SIZE = 16
 # Dashboard/GIF only. The ticker is gated by the quota-7j cell crop: a missing
 # weekly cell scored global Δ≈13–62, under any Hamming that still survives
-# freetype drift.
+# freetype drift. Do not raise these gates to hide overlap or a moved slot.
 MAX_HAMMING = 72
-# 16x16 of the `quota 7 j` box from `ticker_cell_box`. Blur is Δ≈2; five cells stretched into
+# 16x16 of the locked `quota 7 j` box. Blur is Δ≈2; five cells stretched into
 # six or rtk painted in that slot is Δ≈50–70.
 MAX_CELL_HAMMING = 32
 MIN_UNIQUE_COLORS = 24
+# Ship layout at 866×44: unequal cells (72, 78, 96, 76, 96, 72). Weekly quota is
+# index 4, 96 px, immediately left of rtk. x = 112 + 72+78+96+76 = 434
+# (was 496 when every cell was 96). Keep in lockstep with TICKER_CELL_WIDTHS.
+QUOTA_7J_BOX = (434, 0, 96, 44)
 
 
 def png_size(path: Path) -> tuple[int, int]:
@@ -85,11 +89,17 @@ def _frame0(image: Image.Image) -> Image.Image:
 
 
 def ticker_quota_7j_box(window_width: int, window_height: int) -> tuple[int, int, int, int]:
-    from token_hud.hud import quota_7j_cell_index, ticker_cell_box, ticker_cells
+    from token_hud.hud import TICKER_SIZE, quota_7j_cell_index, ticker_cell_box, ticker_cells
     from token_hud.model import Snapshot
 
     n_cells = len(ticker_cells(Snapshot()))
-    return ticker_cell_box(window_width, window_height, quota_7j_cell_index(), n_cells)
+    box = ticker_cell_box(window_width, window_height, quota_7j_cell_index(), n_cells)
+    if (window_width, window_height) == TICKER_SIZE and box != QUOTA_7J_BOX:
+        raise ValueError(
+            f"quota 7 j cell box is {box}, expected locked fixture {QUOTA_7J_BOX}. "
+            "Update QUOTA_7J_BOX together with make gif; do not skip or loosen the cell gate."
+        )
+    return box
 
 
 def crop_ticker_quota_7j(image: Image.Image) -> Image.Image:

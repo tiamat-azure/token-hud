@@ -125,13 +125,21 @@ def _stretch_five_cells_into_six(ticker):
 
 
 def test_quota_7j_cell_box_is_index_4_left_of_rtk():
+    tools = Path(__file__).resolve().parents[1] / "tools"
+    if str(tools) not in sys.path:
+        sys.path.insert(0, str(tools))
+    import verify_shots as vs  # noqa: E402
+
     labels = [label for _v, label, _c, _g in ticker_cells(Snapshot())]
     index = quota_7j_cell_index()
     assert index == 4
     assert labels[index] == "quota 7 j"
     assert labels[index + 1] == "rtk ratio"
-    x = 112 + sum(TICKER_CELL_WIDTHS[:index])
-    assert ticker_cell_box(*TICKER_SIZE, index, len(labels)) == (x, 0, TICKER_CELL_WIDTHS[index], 44)
+    box = ticker_cell_box(*TICKER_SIZE, index, len(labels))
+    assert box == (434, 0, 96, 44)
+    assert box == vs.QUOTA_7J_BOX
+    assert vs.MAX_HAMMING == 72
+    assert vs.MAX_CELL_HAMMING == 32
 
 
 def test_hundred_percent_libre_stays_left_of_separator():
