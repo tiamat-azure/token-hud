@@ -19,7 +19,8 @@ Managed with [uv](https://docs.astral.sh/uv/), driven through a Makefile.
 
 ```sh
 make dev    # create .venv, install runtime + dev dependencies
-make start  # launch the HUD in background
+make start  # launch the HUD in background, or unhide if already running
+make stop   # stop the process (kills the PID in .token-hud.pid); not hide
 make check  # ruff + pytest, no display needed
 make shots  # grab ticker + dashboard PNGs from the real HUD (offscreen)
 make gif    # shots, then stitch images/demo.gif
