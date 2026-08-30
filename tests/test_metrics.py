@@ -23,9 +23,9 @@ from token_hud.gauges import (  # noqa: E402
 from token_hud.hud import (  # noqa: E402
     DASHBOARD_SIZE,
     TICKER_CELL_COUNT,
+    TICKER_CELL_WIDTHS,
     TICKER_CELLS_LEFT,
     TICKER_CELLS_STRIP_GAP,
-    TICKER_MIN_CELL_W,
     TICKER_SEPARATOR_INSET,
     TICKER_SIZE,
     TICKER_STRIP_W,
@@ -62,12 +62,16 @@ def test_quota_window_reports_free_percentage():
     assert QuotaWindow(utilization_pct=140.0).free_pct == 0.0
 
 
-def test_ticker_height_is_44_and_width_fits_six_min_cells():
+def test_ticker_height_is_44_and_width_reallocates_slack_to_strip():
+    assert TICKER_SIZE == (866, 44)
     assert TICKER_SIZE[1] == 44
+    assert TICKER_CELL_WIDTHS == (72, 78, 96, 76, 96, 72)
+    assert TICKER_STRIP_W == 236
     assert TICKER_SIZE == (
-        int(TICKER_CELLS_LEFT + TICKER_MIN_CELL_W * TICKER_CELL_COUNT + TICKER_STRIP_W + TICKER_CELLS_STRIP_GAP),
+        int(TICKER_CELLS_LEFT + sum(TICKER_CELL_WIDTHS) + TICKER_STRIP_W + TICKER_CELLS_STRIP_GAP),
         44,
     )
+    assert sum(TICKER_CELL_WIDTHS) == ticker_cells_width(TICKER_SIZE[0])
     assert DASHBOARD_SIZE == (560, 380)
     assert len(ticker_cells(Snapshot())) == TICKER_CELL_COUNT
 
@@ -126,18 +130,14 @@ def test_quota_7j_cell_box_is_index_4_left_of_rtk():
     assert index == 4
     assert labels[index] == "quota 7 j"
     assert labels[index + 1] == "rtk ratio"
-    cell_w = int(TICKER_MIN_CELL_W)
-    assert ticker_cell_box(*TICKER_SIZE, index, len(labels)) == (112 + 4 * cell_w, 0, cell_w, 44)
+    x = 112 + sum(TICKER_CELL_WIDTHS[:index])
+    assert ticker_cell_box(*TICKER_SIZE, index, len(labels)) == (x, 0, TICKER_CELL_WIDTHS[index], 44)
 
 
 def test_hundred_percent_libre_stays_left_of_separator():
     """Widget-free: cell box vs monospace advance of the longest quota string."""
     n = TICKER_CELL_COUNT
     advance = ticker_mono_advance_px("100 % libre")
-    inner = ticker_value_inner_width(TICKER_SIZE[0], n)
-    assert inner == TICKER_MIN_CELL_W - TICKER_SEPARATOR_INSET
-    assert advance < inner
-
     snap = Snapshot(
         quota=QuotaMetrics(
             five_hour=QuotaWindow(utilization_pct=0.0),
@@ -151,9 +151,13 @@ def test_hundred_percent_libre_stays_left_of_separator():
     assert cells[weekly + 1][1] == "rtk ratio"
 
     for index in (2, weekly):
+        inner = ticker_value_inner_width(TICKER_SIZE[0], n, index)
+        assert inner == TICKER_CELL_WIDTHS[index] - TICKER_SEPARATOR_INSET
+        assert advance < inner
+        assert inner - advance >= 6
         x, _y, _w, _h = ticker_cell_box(*TICKER_SIZE, index, n)
         sep = ticker_separator_x(TICKER_SIZE[0], index + 1, n)
-        assert x + advance < sep
+        assert x + advance + 6 <= sep
         assert x + inner <= sep
 
 
