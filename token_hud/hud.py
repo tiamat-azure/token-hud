@@ -45,13 +45,22 @@ from .model import Snapshot
 from .store import HISTORY_INTERVAL_S, MetricsStore
 
 DASHBOARD_SIZE = (560, 380)
-TICKER_SIZE = (806, 44)
 DEFAULT_MODE = "ticker"
 TICKER_STRIP_W = 150
 TICKER_CELLS_X = 112.0
 TICKER_CELLS_LEFT = 130
 TICKER_CELLS_STRIP_GAP = 10
-TICKER_MIN_CELL_W = 78.0
+# Rule is drawn this many px to the left of the next cell. Value/label rects stop here
+# so a long readout like « 100 % libre » cannot paint on the separator.
+TICKER_SEPARATOR_INSET = 10
+# JetBrains Mono 9pt DemiBold at 96dpi: « 100 % libre » advances 79.1px. Inner width
+# is cell_w - inset, so 96px cells leave ~7px of air before the rule.
+TICKER_MIN_CELL_W = 96.0
+TICKER_CELL_COUNT = 6
+TICKER_SIZE = (
+    int(TICKER_CELLS_LEFT + TICKER_MIN_CELL_W * TICKER_CELL_COUNT + TICKER_STRIP_W + TICKER_CELLS_STRIP_GAP),
+    44,
+)
 
 _PALETTE = {"cyan": theme.CYAN, "violet": theme.VIOLET, "green": theme.GREEN}
 
@@ -80,6 +89,26 @@ def ticker_cells_width(window_width: int, strip_w: int = TICKER_STRIP_W) -> floa
 
 def ticker_cell_width(window_width: int, n_cells: int, strip_w: int = TICKER_STRIP_W) -> float:
     return max(TICKER_MIN_CELL_W, ticker_cells_width(window_width, strip_w) / max(1, n_cells))
+
+
+def ticker_separator_x(window_width: int, index: int, n_cells: int, strip_w: int = TICKER_STRIP_W) -> int:
+    """X of the vertical rule to the left of cell `index` (`index >= 1`). Matches paintEvent."""
+    cell_w = ticker_cell_width(window_width, n_cells, strip_w)
+    return int(TICKER_CELLS_X + index * cell_w - TICKER_SEPARATOR_INSET)
+
+
+def ticker_value_inner_width(window_width: int, n_cells: int, strip_w: int = TICKER_STRIP_W) -> float:
+    """Width of the value/label rect: full cell minus the separator gap."""
+    return ticker_cell_width(window_width, n_cells, strip_w) - TICKER_SEPARATOR_INSET
+
+
+def ticker_mono_advance_px(text: str, *, pt: int = 9, spacing: float = 0.0) -> float:
+    """JetBrains Mono is 0.6em wide. At Qt 96dpi, `px = pt * 96 / 72`."""
+    em = pt * 96.0 / 72.0
+    advance = len(text) * em * 0.6
+    if spacing:
+        advance *= (100.0 + spacing) / 100.0
+    return advance
 
 
 def ticker_cell_box(
@@ -122,8 +151,12 @@ class _Header(QWidget):
         font = theme.mono(6, spacing=16)
         theme.draw_text(painter, QRectF(0, 0, self.width() / 2, 16), self._left.upper(), theme.DIM2, font)
         theme.draw_text(
-            painter, QRectF(self.width() / 2, 0, self.width() / 2, 16), self._right.upper(),
-            self._right_color, font, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            painter,
+            QRectF(self.width() / 2, 0, self.width() / 2, 16),
+            self._right.upper(),
+            self._right_color,
+            font,
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
         )
 
 
@@ -193,7 +226,8 @@ class DashboardView(QWidget):
         model = snap.headroom.model or "claude"
         live = f"{snap.headroom.requests} req · maj 5 s" if snap.headroom.ok else "sources indisponibles"
         self.header.set_status(
-            f"◉ token hud · {model}", f"● {live}",
+            f"◉ token hud · {model}",
+            f"● {live}",
             theme.GREEN if snap.headroom.ok else theme.RED,
         )
 
@@ -230,10 +264,11 @@ class DashboardView(QWidget):
 
 
 class TickerView(QWidget):
-    """Collapsed 806x44 bar: six readouts (including 7-day quota), then the commit strip.
+    """Collapsed ticker bar: six readouts (including 7-day quota), then the commit strip.
 
     The strip is suffixed rather than substituted - the existing indicators keep
-    their slots, they only get narrower.
+    their slots, they only get narrower. Height is locked at 44px; width follows
+    `TICKER_SIZE` so « 100 % libre » fits left of the next separator.
     """
 
     STRIP_W = TICKER_STRIP_W
@@ -245,9 +280,7 @@ class TickerView(QWidget):
         self.strip = CommitStrip(self)
 
     def resizeEvent(self, event) -> None:
-        self.strip.setGeometry(
-            self.width() - self.STRIP_W - 14, 6, self.STRIP_W, self.height() - 14
-        )
+        self.strip.setGeometry(self.width() - self.STRIP_W - 14, 6, self.STRIP_W, self.height() - 14)
         super().resizeEvent(event)
 
     def apply(self, snap: Snapshot, *_ignored) -> None:
@@ -260,23 +293,32 @@ class TickerView(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         theme.draw_text(
-            painter, QRectF(14, 0, 90, self.height()), "◉ TOKEN HUD", theme.CYAN,
-            theme.mono(8, QFont.Weight.DemiBold, spacing=18), glow=True,
+            painter,
+            QRectF(14, 0, 90, self.height()),
+            "◉ TOKEN HUD",
+            theme.CYAN,
+            theme.mono(8, QFont.Weight.DemiBold, spacing=18),
+            glow=True,
         )
         x = TICKER_CELLS_X
         cells_w = ticker_cells_width(self.width(), self.STRIP_W)
-        cell_w = ticker_cell_width(self.width(), len(self._cells), self.STRIP_W)
+        n_cells = len(self._cells)
+        cell_w = ticker_cell_width(self.width(), n_cells, self.STRIP_W)
+        inner_w = ticker_value_inner_width(self.width(), n_cells, self.STRIP_W)
         for index, (value, label, color, glow) in enumerate(self._cells):
             if index:
+                sep_x = ticker_separator_x(self.width(), index, n_cells, self.STRIP_W)
                 painter.setPen(QPen(theme.LINE, 1))
-                painter.drawLine(int(x - 10), 10, int(x - 10), self.height() - 10)
+                painter.drawLine(sep_x, 10, sep_x, self.height() - 10)
             theme.draw_text(
-                painter, QRectF(x, 7, cell_w, 16), value, color,
-                theme.mono(9, QFont.Weight.DemiBold), glow=glow,
+                painter,
+                QRectF(x, 7, inner_w, 16),
+                value,
+                color,
+                theme.mono(9, QFont.Weight.DemiBold),
+                glow=glow,
             )
-            theme.draw_text(
-                painter, QRectF(x, 24, cell_w, 12), label.upper(), theme.DIM2, theme.mono(6, spacing=14)
-            )
+            theme.draw_text(painter, QRectF(x, 24, inner_w, 12), label.upper(), theme.DIM2, theme.mono(6, spacing=14))
             x += cell_w
 
         separator_x = self.width() - self.STRIP_W - 24
@@ -307,11 +349,7 @@ class HudWindow(QWidget):
         self._settings = QSettings("token-hud", "hud")
 
         self.setWindowTitle("Token HUD")
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
-        )
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         # Showing without activating keeps the focus on the terminal underneath, but the
         # window manager then never re-raises us above a freshly focused fullscreen client.
@@ -368,11 +406,7 @@ class HudWindow(QWidget):
         """Gaps between sessions would spike the chart, so only contiguous pairs count."""
         points = self._store.series()
         max_gap = HISTORY_INTERVAL_S * 3
-        return [
-            max(0.0, b[1] - a[1])
-            for a, b in zip(points, points[1:], strict=False)
-            if b[0] - a[0] <= max_gap
-        ]
+        return [max(0.0, b[1] - a[1]) for a, b in zip(points, points[1:], strict=False) if b[0] - a[0] <= max_gap]
 
     def _update_alert(self, snap: Snapshot) -> None:
         pct = max(snap.quota.five_hour.utilization_pct, snap.quota.seven_day.utilization_pct)
@@ -477,9 +511,7 @@ def build_menu(window: HudWindow, *, tray_context: bool) -> QMenu:
         toggle = QAction("Masquer le HUD" if window.isVisible() else "Afficher le HUD", menu)
         toggle.triggered.connect(lambda: window.setVisible(not window.isVisible()))
         menu.addAction(toggle)
-    switch = QAction(
-        "Mode ticker (compact)" if window.mode == "dashboard" else "Mode dashboard (complet)", menu
-    )
+    switch = QAction("Mode ticker (compact)" if window.mode == "dashboard" else "Mode dashboard (complet)", menu)
     switch.triggered.connect(window.toggle_mode)
     menu.addAction(switch)
     menu.addSeparator()
@@ -510,8 +542,8 @@ def tray_icon(parent, window: HudWindow) -> QSystemTrayIcon:
     refresh_menu()
     window.modeChanged.connect(refresh_menu)
     tray.activated.connect(
-        lambda reason: window.setVisible(not window.isVisible())
-        if reason == QSystemTrayIcon.ActivationReason.Trigger
-        else None
+        lambda reason: (
+            window.setVisible(not window.isVisible()) if reason == QSystemTrayIcon.ActivationReason.Trigger else None
+        )
     )
     return tray

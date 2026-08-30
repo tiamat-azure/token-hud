@@ -28,7 +28,7 @@ HASH_SIZE = 16
 # weekly cell scored global Δ≈13–62, under any Hamming that still survives
 # freetype drift.
 MAX_HAMMING = 72
-# 16x16 of the 86×44 `quota 7 j` box. Blur is Δ≈2; five cells stretched into
+# 16x16 of the `quota 7 j` box from `ticker_cell_box`. Blur is Δ≈2; five cells stretched into
 # six or rtk painted in that slot is Δ≈50–70.
 MAX_CELL_HAMMING = 32
 MIN_UNIQUE_COLORS = 24

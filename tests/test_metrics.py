@@ -22,11 +22,20 @@ from token_hud.gauges import (  # noqa: E402
 )
 from token_hud.hud import (  # noqa: E402
     DASHBOARD_SIZE,
+    TICKER_CELL_COUNT,
+    TICKER_CELLS_LEFT,
+    TICKER_CELLS_STRIP_GAP,
+    TICKER_MIN_CELL_W,
+    TICKER_SEPARATOR_INSET,
     TICKER_SIZE,
+    TICKER_STRIP_W,
     quota_7j_cell_index,
     ticker_cell_box,
     ticker_cells,
     ticker_cells_width,
+    ticker_mono_advance_px,
+    ticker_separator_x,
+    ticker_value_inner_width,
 )
 from token_hud.model import HeadroomMetrics, QuotaMetrics, QuotaWindow, RtkMetrics, Snapshot  # noqa: E402
 
@@ -53,9 +62,14 @@ def test_quota_window_reports_free_percentage():
     assert QuotaWindow(utilization_pct=140.0).free_pct == 0.0
 
 
-def test_ticker_size_is_806_by_44():
-    assert TICKER_SIZE == (806, 44)
+def test_ticker_height_is_44_and_width_fits_six_min_cells():
     assert TICKER_SIZE[1] == 44
+    assert TICKER_SIZE == (
+        int(TICKER_CELLS_LEFT + TICKER_MIN_CELL_W * TICKER_CELL_COUNT + TICKER_STRIP_W + TICKER_CELLS_STRIP_GAP),
+        44,
+    )
+    assert DASHBOARD_SIZE == (560, 380)
+    assert len(ticker_cells(Snapshot())) == TICKER_CELL_COUNT
 
 
 def _png_size(path: Path) -> tuple[int, int]:
@@ -106,13 +120,41 @@ def _stretch_five_cells_into_six(ticker):
     return stretched
 
 
-def test_quota_7j_cell_box_is_index_4_at_806x44():
+def test_quota_7j_cell_box_is_index_4_left_of_rtk():
     labels = [label for _v, label, _c, _g in ticker_cells(Snapshot())]
     index = quota_7j_cell_index()
     assert index == 4
     assert labels[index] == "quota 7 j"
     assert labels[index + 1] == "rtk ratio"
-    assert ticker_cell_box(*TICKER_SIZE, index, len(labels)) == (456, 0, 86, 44)
+    cell_w = int(TICKER_MIN_CELL_W)
+    assert ticker_cell_box(*TICKER_SIZE, index, len(labels)) == (112 + 4 * cell_w, 0, cell_w, 44)
+
+
+def test_hundred_percent_libre_stays_left_of_separator():
+    """Widget-free: cell box vs monospace advance of the longest quota string."""
+    n = TICKER_CELL_COUNT
+    advance = ticker_mono_advance_px("100 % libre")
+    inner = ticker_value_inner_width(TICKER_SIZE[0], n)
+    assert inner == TICKER_MIN_CELL_W - TICKER_SEPARATOR_INSET
+    assert advance < inner
+
+    snap = Snapshot(
+        quota=QuotaMetrics(
+            five_hour=QuotaWindow(utilization_pct=0.0),
+            seven_day=QuotaWindow(utilization_pct=0.0),
+        )
+    )
+    cells = ticker_cells(snap)
+    assert cells[2][0] == "100 % libre"
+    weekly = quota_7j_cell_index(snap)
+    assert cells[weekly][0] == "100 % libre"
+    assert cells[weekly + 1][1] == "rtk ratio"
+
+    for index in (2, weekly):
+        x, _y, _w, _h = ticker_cell_box(*TICKER_SIZE, index, n)
+        sep = ticker_separator_x(TICKER_SIZE[0], index + 1, n)
+        assert x + advance < sep
+        assert x + inner <= sep
 
 
 def test_quota_7j_cell_hash_fails_if_the_weekly_slot_is_stretched_away():
@@ -129,7 +171,7 @@ def test_quota_7j_cell_hash_fails_if_the_weekly_slot_is_stretched_away():
     assert vs.hamming(vs.average_hash(cell), vs.average_hash(blurred)) <= vs.MAX_CELL_HAMMING
 
     stretched = _stretch_five_cells_into_six(ticker)
-    # Size check would still pass (806×44); global aHash stays under 72.
+    # Size check would still pass (same TICKER_SIZE); global aHash stays under 72.
     assert stretched.size == TICKER_SIZE
     assert vs.hamming(vs.average_hash(ticker), vs.average_hash(stretched)) < vs.MAX_HAMMING
     bad = vs.crop_ticker_quota_7j(stretched)
@@ -245,16 +287,14 @@ def test_read_rtk_survives_broken_output(monkeypatch):
 
 # --- commit heatmap ----------------------------------------------------------
 
+
 def _commits(counts):
     from datetime import date, timedelta
 
     from token_hud.model import CommitMetrics
 
     today = date(2026, 8, 6)
-    days = tuple(
-        ((today - timedelta(days=len(counts) - 1 - i)).isoformat(), c)
-        for i, c in enumerate(counts)
-    )
+    days = tuple(((today - timedelta(days=len(counts) - 1 - i)).isoformat(), c) for i, c in enumerate(counts))
     return CommitMetrics(days=days, source="github", ok=True)
 
 
@@ -262,14 +302,14 @@ def test_commit_totals_and_streaks():
     metrics = _commits([0, 5, 14, 6, 0, 3, 1])
     assert metrics.total == 29
     assert metrics.peak == 14
-    assert metrics.streak == 2       # 3 then 1, stopped by the zero before them
+    assert metrics.streak == 2  # 3 then 1, stopped by the zero before them
     assert metrics.best_streak == 3  # 5, 14, 6
 
 
 def test_commit_levels_use_quantiles_not_fixed_thresholds():
     metrics = _commits([0, 5, 14, 6, 3, 8, 7, 0, 5])
     assert metrics.level_of(0) == 0
-    assert metrics.level_of(14) == 4          # the peak is the only glowing level
+    assert metrics.level_of(14) == 4  # the peak is the only glowing level
     assert metrics.level_of(3) < metrics.level_of(8)
     assert len({metrics.level_of(v) for v in (3, 5, 7, 8, 14)}) >= 3
 
@@ -326,13 +366,23 @@ def test_github_reader_maps_calendar_onto_the_rolling_window(monkeypatch):
 
     today = date.today()
     payload = {
-        "data": {"viewer": {"contributionsCollection": {"contributionCalendar": {"weeks": [
-            {"contributionDays": [
-                {"date": (today - timedelta(days=1)).isoformat(), "contributionCount": 4},
-                {"date": today.isoformat(), "contributionCount": 2},
-                {"date": (today - timedelta(days=400)).isoformat(), "contributionCount": 9},
-            ]}
-        ]}}}}
+        "data": {
+            "viewer": {
+                "contributionsCollection": {
+                    "contributionCalendar": {
+                        "weeks": [
+                            {
+                                "contributionDays": [
+                                    {"date": (today - timedelta(days=1)).isoformat(), "contributionCount": 4},
+                                    {"date": today.isoformat(), "contributionCount": 2},
+                                    {"date": (today - timedelta(days=400)).isoformat(), "contributionCount": 9},
+                                ]
+                            }
+                        ]
+                    }
+                }
+            }
+        }
     }
 
     class Proc:
