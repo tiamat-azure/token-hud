@@ -194,7 +194,11 @@ def read_quota() -> QuotaMetrics:
 _GH_QUERY = """
 query($from: DateTime!, $to: DateTime!) {
   viewer {
+    id
     contributionsCollection(from: $from, to: $to) {
+      commitContributionsByRepository(maxRepositories: 100) {
+        repository { nameWithOwner }
+      }
       contributionCalendar {
         weeks { contributionDays { date contributionCount } }
       }
@@ -202,6 +206,42 @@ query($from: DateTime!, $to: DateTime!) {
   }
 }
 """
+
+_GH_HISTORY = """
+history(first: 100, after: $history, since: $since, until: $until, author: {id: $author}) {
+  pageInfo { hasNextPage endCursor }
+  nodes { authoredDate }
+}
+"""
+
+_GH_PRIVATE_QUERY = """
+query($after: String, $history: String, $since: GitTimestamp!, $until: GitTimestamp!, $author: ID!) {
+  viewer {
+    repositories(
+      first: 50, after: $after, privacy: PRIVATE,
+      ownerAffiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER],
+      orderBy: {field: PUSHED_AT, direction: DESC}
+    ) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        nameWithOwner isFork pushedAt
+        defaultBranchRef { target { ... on Commit { __HISTORY__ } } }
+      }
+    }
+  }
+}
+""".replace("__HISTORY__", _GH_HISTORY)
+
+_GH_REPO_HISTORY_QUERY = """
+query($owner: String!, $name: String!, $history: String, $since: GitTimestamp!,
+      $until: GitTimestamp!, $author: ID!) {
+  repository(owner: $owner, name: $name) {
+    defaultBranchRef { target { ... on Commit { __HISTORY__ } } }
+  }
+}
+""".replace("__HISTORY__", _GH_HISTORY)
+
+GH_MAX_PAGES = 20  # hard stop on pagination, whatever the account size
 
 
 def _window() -> list[date]:
@@ -214,8 +254,89 @@ def _as_days(counts: dict[str, int], source: str) -> CommitMetrics:
     return CommitMetrics(days=days, source=source, ok=True)
 
 
+def _gh_graphql(query: str, variables: dict[str, str | None]) -> dict | None:
+    """One `gh api graphql` call; the `data` object, or None on any failure."""
+    command = ["gh", "api", "graphql", "--cache", "0", "-f", f"query={query}"]
+    for key, value in variables.items():
+        if value is not None:
+            command += ["-F", f"{key}={value}"]
+    try:
+        proc = subprocess.run(command, capture_output=True, text=True, timeout=20, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return None
+    try:
+        data = json.loads(proc.stdout).get("data")
+    except (ValueError, AttributeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def count_authored_days(timestamps: list[str]) -> dict[str, int]:
+    """Bucket ISO-8601 commit timestamps (GitHub returns UTC) by *local* calendar day."""
+    counts: dict[str, int] = {}
+    for stamp in timestamps:
+        try:
+            moment = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            continue
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+        day = moment.astimezone().date().isoformat()
+        counts[day] = counts.get(day, 0) + 1
+    return counts
+
+
+def _history(node: dict | None) -> dict:
+    target = ((node or {}).get("defaultBranchRef") or {}).get("target") or {}
+    return target.get("history") or {}
+
+
+def _private_commit_counts(
+    author: str, since: str, until: str, already_counted: set[str]
+) -> dict[str, int]:
+    """Commits on the default branch of private repos, which the calendar leaves out.
+
+    `contributionCalendar` drops private contributions unless the profile setting
+    "Private contributions" is on, even for the viewer. Repos already listed in
+    `commitContributionsByRepository` are skipped, so turning the setting on later never
+    double-counts. Issues and PRs in private repos stay out: commits are the bulk.
+    """
+    base = {"since": since, "until": until, "author": author}
+    stamps: list[str] = []
+    after: str | None = None
+    for _page in range(GH_MAX_PAGES):
+        data = _gh_graphql(_GH_PRIVATE_QUERY, {**base, "after": after, "history": None})
+        repos = ((data or {}).get("viewer") or {}).get("repositories") or {}
+        stale = False
+        for repo in repos.get("nodes") or []:
+            name = repo.get("nameWithOwner") or ""
+            if (repo.get("pushedAt") or "") < since[:10]:
+                stale = True  # sorted by push date: nothing older can hold a commit
+                break
+            if repo.get("isFork") or name in already_counted or "/" not in name:
+                continue
+            history = _history(repo)
+            for _more in range(GH_MAX_PAGES):
+                stamps += [n.get("authoredDate", "") for n in history.get("nodes") or []]
+                info = history.get("pageInfo") or {}
+                if not info.get("hasNextPage"):
+                    break
+                owner, repo_name = name.split("/", 1)
+                more = _gh_graphql(_GH_REPO_HISTORY_QUERY, {
+                    **base, "owner": owner, "name": repo_name, "history": info.get("endCursor"),
+                })
+                history = _history((more or {}).get("repository"))
+        info = repos.get("pageInfo") or {}
+        if stale or not info.get("hasNextPage"):
+            break
+        after = info.get("endCursor")
+    return count_authored_days(stamps)
+
+
 def read_commits_github() -> CommitMetrics | None:
-    """The profile calendar itself: every repo, private included. Needs `gh auth`.
+    """The profile calendar itself, private repo commits included. Needs `gh auth`.
 
     The window is sent with the local UTC offset: without it GitHub buckets the days in
     UTC and today's commits land on yesterday's cell for east-of-Greenwich timezones.
@@ -223,28 +344,12 @@ def read_commits_github() -> CommitMetrics | None:
     days = _window()
     start = datetime.combine(days[0], time_of_day.min).astimezone()
     end = datetime.combine(days[-1], time_of_day.max).astimezone()
+    data = _gh_graphql(_GH_QUERY, {"from": start.isoformat(), "to": end.isoformat()})
     try:
-        proc = subprocess.run(
-            [
-                "gh", "api", "graphql", "--cache", "0",
-                "-f", f"query={_GH_QUERY}",
-                "-F", f"from={start.isoformat()}",
-                "-F", f"to={end.isoformat()}",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=20,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if proc.returncode != 0 or not proc.stdout.strip():
-        return None
-    try:
-        calendar = json.loads(proc.stdout)["data"]["viewer"]["contributionsCollection"][
-            "contributionCalendar"
-        ]
-    except (ValueError, KeyError, TypeError):
+        viewer = data["viewer"]  # type: ignore[index]
+        collection = viewer["contributionsCollection"]
+        calendar = collection["contributionCalendar"]
+    except (KeyError, TypeError):
         return None
 
     counts = {
@@ -252,6 +357,16 @@ def read_commits_github() -> CommitMetrics | None:
         for week in calendar.get("weeks", [])
         for day in week.get("contributionDays", [])
     }
+    counted = {
+        (entry.get("repository") or {}).get("nameWithOwner", "")
+        for entry in collection.get("commitContributionsByRepository") or []
+    }
+    if viewer.get("id"):
+        private = _private_commit_counts(
+            viewer["id"], start.isoformat(), end.isoformat(), counted
+        )
+        for day, count in private.items():
+            counts[day] = counts.get(day, 0) + count
     return _as_days(counts, "github")
 
 

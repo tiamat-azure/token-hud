@@ -455,3 +455,75 @@ def test_toggle_shows_a_hidden_window():
     assert window.isVisible() is True
     assert window.raised is True
     assert window.activated is True
+
+
+def test_count_authored_days_buckets_utc_timestamps_by_local_day():
+    from datetime import datetime
+
+    stamp = "2026-09-22T22:30:00Z"
+    local_day = datetime.fromisoformat("2026-09-22T22:30:00+00:00").astimezone().date().isoformat()
+    assert collectors.count_authored_days([stamp, stamp, "garbage"]) == {local_day: 2}
+
+
+def test_github_reader_adds_private_commits_the_calendar_leaves_out(monkeypatch):
+    from datetime import date, datetime, timedelta
+
+    today = date.today()
+    noon = datetime.combine(today, datetime.min.time()).replace(hour=12).astimezone()
+    stamp = noon.isoformat()
+    calendar = {
+        "data": {
+            "viewer": {
+                "id": "U_1",
+                "contributionsCollection": {
+                    "commitContributionsByRepository": [
+                        {"repository": {"nameWithOwner": "me/shared"}}
+                    ],
+                    "contributionCalendar": {
+                        "weeks": [{"contributionDays": [
+                            {"date": today.isoformat(), "contributionCount": 5}
+                        ]}]
+                    },
+                },
+            }
+        }
+    }
+
+    def repo(name, commits, *, fork=False, pushed=stamp):
+        history = {"pageInfo": {"hasNextPage": False}, "nodes": [{"authoredDate": stamp}] * commits}
+        return {
+            "nameWithOwner": name, "isFork": fork, "pushedAt": pushed,
+            "defaultBranchRef": {"target": {"history": history}},
+        }
+
+    stale = (today - timedelta(days=90)).isoformat() + "T00:00:00Z"
+    private = {
+        "data": {
+            "viewer": {
+                "repositories": {
+                    "pageInfo": {"hasNextPage": False},
+                    "nodes": [
+                        repo("me/secret", 13),
+                        repo("me/shared", 7),  # already in the calendar: no double count
+                        repo("me/fork", 4, fork=True),  # GitHub never counts forks
+                        repo("me/old", 9, pushed=stale),
+                    ],
+                }
+            }
+        }
+    }
+
+    class Proc:
+        returncode = 0
+
+        def __init__(self, payload):
+            self.stdout = json.dumps(payload)
+
+    def fake_run(command, **_kwargs):
+        query = next(arg for arg in command if arg.startswith("query="))
+        return Proc(private if "repositories(" in query else calendar)
+
+    monkeypatch.setattr(collectors.subprocess, "run", fake_run)
+    metrics = collectors.read_commits_github()
+    assert metrics is not None
+    assert metrics.days[-1] == (today.isoformat(), 18)
