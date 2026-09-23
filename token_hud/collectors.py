@@ -199,6 +199,12 @@ query($from: DateTime!, $to: DateTime!) {
       commitContributionsByRepository(maxRepositories: 100) {
         repository { nameWithOwner }
       }
+      issueContributionsByRepository(maxRepositories: 100) {
+        repository { nameWithOwner }
+      }
+      pullRequestContributionsByRepository(maxRepositories: 100) {
+        repository { nameWithOwner }
+      }
       contributionCalendar {
         weeks { contributionDays { date contributionCount } }
       }
@@ -240,6 +246,19 @@ query($owner: String!, $name: String!, $history: String, $since: GitTimestamp!,
   }
 }
 """.replace("__HISTORY__", _GH_HISTORY)
+
+_GH_SEARCH_QUERY = """
+query($q: String!, $after: String) {
+  search(type: ISSUE, first: 100, after: $after, query: $q) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      __typename
+      ... on Issue { createdAt repository { nameWithOwner isFork } }
+      ... on PullRequest { createdAt repository { nameWithOwner isFork } }
+    }
+  }
+}
+"""
 
 GH_MAX_PAGES = 20  # hard stop on pagination, whatever the account size
 
@@ -335,11 +354,47 @@ def _private_commit_counts(
     return count_authored_days(stamps)
 
 
-def read_commits_github() -> CommitMetrics | None:
-    """The profile calendar itself, private repo commits included. Needs `gh auth`.
+def _private_issue_counts(
+    start: datetime, end: datetime, already_counted: dict[str, set[str]]
+) -> dict[str, int]:
+    """Issues and PRs opened in private repos, left out of the calendar like the commits.
 
-    The window is sent with the local UTC offset: without it GitHub buckets the days in
-    UTC and today's commits land on yesterday's cell for east-of-Greenwich timezones.
+    `already_counted` maps "Issue" / "PullRequest" to the repos the calendar already
+    covers. Forks are skipped, as on GitHub.
+    """
+    window = f"{start.isoformat(timespec='seconds')}..{end.isoformat(timespec='seconds')}"
+    query = f"author:@me is:private created:{window}"
+    stamps: list[str] = []
+    after: str | None = None
+    for _page in range(GH_MAX_PAGES):
+        data = _gh_graphql(_GH_SEARCH_QUERY, {"q": query, "after": after})
+        search = (data or {}).get("search") or {}
+        for node in search.get("nodes") or []:
+            repo = (node or {}).get("repository") or {}
+            skip = already_counted.get(node.get("__typename", ""), set())
+            if repo.get("isFork") or repo.get("nameWithOwner") in skip:
+                continue
+            stamps.append(node.get("createdAt", ""))
+        info = search.get("pageInfo") or {}
+        if not info.get("hasNextPage"):
+            break
+        after = info.get("endCursor")
+    return count_authored_days(stamps)
+
+
+def _repo_names(collection: dict, field: str) -> set[str]:
+    return {
+        (entry.get("repository") or {}).get("nameWithOwner", "")
+        for entry in collection.get(field) or []
+    }
+
+
+def read_commits_github() -> CommitMetrics | None:
+    """The profile calendar itself, private repo commits, issues and PRs included.
+
+    Needs `gh auth`. The window is sent with the local UTC offset: without it GitHub
+    buckets the days in UTC and today's commits land on yesterday's cell for
+    east-of-Greenwich timezones.
     """
     days = _window()
     start = datetime.combine(days[0], time_of_day.min).astimezone()
@@ -357,15 +412,19 @@ def read_commits_github() -> CommitMetrics | None:
         for week in calendar.get("weeks", [])
         for day in week.get("contributionDays", [])
     }
-    counted = {
-        (entry.get("repository") or {}).get("nameWithOwner", "")
-        for entry in collection.get("commitContributionsByRepository") or []
-    }
+    extras = [
+        _private_issue_counts(start, end, {
+            "Issue": _repo_names(collection, "issueContributionsByRepository"),
+            "PullRequest": _repo_names(collection, "pullRequestContributionsByRepository"),
+        })
+    ]
     if viewer.get("id"):
-        private = _private_commit_counts(
-            viewer["id"], start.isoformat(), end.isoformat(), counted
-        )
-        for day, count in private.items():
+        extras.append(_private_commit_counts(
+            viewer["id"], start.isoformat(), end.isoformat(),
+            _repo_names(collection, "commitContributionsByRepository"),
+        ))
+    for extra in extras:
+        for day, count in extra.items():
             counts[day] = counts.get(day, 0) + count
     return _as_days(counts, "github")
 

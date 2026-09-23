@@ -527,3 +527,62 @@ def test_github_reader_adds_private_commits_the_calendar_leaves_out(monkeypatch)
     metrics = collectors.read_commits_github()
     assert metrics is not None
     assert metrics.days[-1] == (today.isoformat(), 18)
+
+
+def test_github_reader_adds_private_issues_and_prs(monkeypatch):
+    from datetime import date, datetime
+
+    today = date.today()
+    stamp = datetime.combine(today, datetime.min.time()).replace(hour=12).astimezone().isoformat()
+    calendar = {
+        "data": {
+            "viewer": {
+                "contributionsCollection": {
+                    "issueContributionsByRepository": [
+                        {"repository": {"nameWithOwner": "me/shared"}}
+                    ],
+                    "contributionCalendar": {
+                        "weeks": [{"contributionDays": [
+                            {"date": today.isoformat(), "contributionCount": 1}
+                        ]}]
+                    },
+                },
+            }
+        }
+    }
+
+    def node(kind, name, *, fork=False):
+        return {
+            "__typename": kind, "createdAt": stamp,
+            "repository": {"nameWithOwner": name, "isFork": fork},
+        }
+
+    search = {
+        "data": {
+            "search": {
+                "pageInfo": {"hasNextPage": False},
+                "nodes": [
+                    node("Issue", "me/secret"),
+                    node("PullRequest", "me/secret"),
+                    node("PullRequest", "me/shared"),  # PRs of me/shared are not counted yet
+                    node("Issue", "me/shared"),  # already in the calendar
+                    node("Issue", "me/fork", fork=True),  # forks never count
+                ],
+            }
+        }
+    }
+
+    class Proc:
+        returncode = 0
+
+        def __init__(self, payload):
+            self.stdout = json.dumps(payload)
+
+    def fake_run(command, **_kwargs):
+        query = next(arg for arg in command if arg.startswith("query="))
+        return Proc(search if "search(" in query else calendar)
+
+    monkeypatch.setattr(collectors.subprocess, "run", fake_run)
+    metrics = collectors.read_commits_github()
+    assert metrics is not None
+    assert metrics.days[-1] == (today.isoformat(), 4)
